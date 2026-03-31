@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(supabase --version)",
+      "Bash(brew install:*)",
+      "Bash(npm install:*)",
+      "Bash(npx create-next-app@14 . --typescript --tailwind --eslint --app --src-dir=no --import-alias=\"@/*\" --no-git)",
+      "Bash(export PATH=\"/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH\")",
+      "Bash(npm --version)",
+      "Read(//private/etc/**)",
+      "Read(//private/etc/paths.d/**)",
+      "Read(//Users/fausto/**)",
+      "Bash(/opt/homebrew/bin/brew list:*)",
+      "Bash(/opt/homebrew/bin/brew install:*)",
+      "Bash(export PATH=\"/opt/homebrew/bin:$PATH\")",
+      "Bash(npx --version)",
+      "Bash(npx create-next-app@14 . --typescript --tailwind --eslint --app --src-dir=no --import-alias=\"@/*\" --no-git --yes)",
+      "Bash(mkdir -p /tmp/photo-curator-temp)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Bash(npx create-next-app@14 photo-curator-temp --typescript --tailwind --eslint --app --no-src-dir --import-alias=\"@/*\" --no-git)",
+      "Bash(npx shadcn@latest init --defaults --yes)"
+    ]
+  }
+}
