@@ -12,6 +12,7 @@ import {
   ChevronUp,
   Loader2,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Photo, SubCollection, SubCollectionPhoto } from '@/lib/types'
@@ -130,12 +131,18 @@ export function SinglePhotoView({
   const [deleting, setDeleting] = useState(false)
   const [savingRating, setSavingRating] = useState(false)
   const [savingFlag, setSavingFlag] = useState(false)
-  const notesRef = useRef<HTMLTextAreaElement>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [notesValue, setNotesValue] = useState(photo.user_notes ?? '')
   const notesSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const hasPrev = currentIndex > 0
   const hasNext = currentIndex < photos.length - 1
   const isAnalyzed = !!photo.ai_analyzed_at
+
+  // Sync notes field when photo ID changes
+  useEffect(() => {
+    setNotesValue(photo.user_notes ?? '')
+  }, [photo.id, photo.user_notes])
 
   // Keyboard navigation
   useEffect(() => {
@@ -156,6 +163,9 @@ export function SinglePhotoView({
           break
         case 'f':
           handleFlagToggle()
+          break
+        case 'a':
+          handleAnalyze()
           break
         case 'Delete':
         case 'Backspace':
@@ -201,18 +211,33 @@ export function SinglePhotoView({
 
   const handleNotesBlur = useCallback(async () => {
     if (notesSaveTimer.current) clearTimeout(notesSaveTimer.current)
-    const notes = notesRef.current?.value ?? ''
-    if (notes === (photo.user_notes ?? '')) return
+    if (notesValue === (photo.user_notes ?? '')) return
     const res = await fetch(`/api/photos/${photo.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_notes: notes }),
+      body: JSON.stringify({ user_notes: notesValue }),
     })
     if (res.ok) {
       const updated = await res.json()
       onPhotoUpdate(updated)
     }
-  }, [photo.id, photo.user_notes, onPhotoUpdate])
+  }, [photo.id, photo.user_notes, notesValue, onPhotoUpdate])
+
+  const handleAnalyze = useCallback(async () => {
+    if (isAnalyzed || analyzing) return
+    setAnalyzing(true)
+    try {
+      const res = await fetch(`/api/photos/${photo.id}/analyze`, {
+        method: 'POST',
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        onPhotoUpdate(updated)
+      }
+    } finally {
+      setAnalyzing(false)
+    }
+  }, [photo.id, isAnalyzed, analyzing, onPhotoUpdate])
 
   const handleDeleteConfirm = async () => {
     setDeleting(true)
@@ -317,26 +342,48 @@ export function SinglePhotoView({
           <section className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">AI Analysis</h3>
-              {isAnalyzed && photo.ai_tier && (
-                <span
-                  className={cn(
-                    'text-xs font-bold px-2 py-0.5 rounded',
-                    TIER_CLASSES[photo.ai_tier]
-                  )}
-                  title={TIER_LABELS[photo.ai_tier]}
-                >
-                  Tier {photo.ai_tier}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {!isAnalyzed && !analyzing && (
+                  <button
+                    type="button"
+                    onClick={handleAnalyze}
+                    title="Analyze (a)"
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-input bg-background hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                  >
+                    <Sparkles className="size-3" />
+                    Analyze
+                  </button>
+                )}
+                {isAnalyzed && photo.ai_tier && (
+                  <span
+                    className={cn(
+                      'text-xs font-bold px-2 py-0.5 rounded',
+                      TIER_CLASSES[photo.ai_tier]
+                    )}
+                    title={TIER_LABELS[photo.ai_tier]}
+                  >
+                    Tier {photo.ai_tier}
+                  </span>
+                )}
+              </div>
             </div>
 
             {!isAnalyzed ? (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
-                <Loader2 className="size-6 text-muted-foreground animate-spin" />
-                <p className="text-sm text-muted-foreground">Analysis pending</p>
-                <p className="text-xs text-muted-foreground/70">
-                  AI critique will appear here once this photo is analyzed.
-                </p>
+                {analyzing ? (
+                  <>
+                    <Loader2 className="size-6 text-muted-foreground animate-spin" />
+                    <p className="text-sm text-muted-foreground">Analyzing…</p>
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="size-6 text-muted-foreground animate-spin" />
+                    <p className="text-sm text-muted-foreground">Analysis pending</p>
+                    <p className="text-xs text-muted-foreground/70">
+                      Click "Analyze" or press <kbd className="font-mono">a</kbd> to start analysis.
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               <>
@@ -450,8 +497,8 @@ export function SinglePhotoView({
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Notes</label>
               <textarea
-                ref={notesRef}
-                defaultValue={photo.user_notes ?? ''}
+                value={notesValue}
+                onChange={(e) => setNotesValue(e.target.value)}
                 onBlur={handleNotesBlur}
                 placeholder="Add notes…"
                 rows={3}

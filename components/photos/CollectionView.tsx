@@ -226,6 +226,7 @@ export function CollectionView({
 
       {photoParam && selectedPhoto ? (
         <SinglePhotoView
+          key={selectedPhoto.id}
           photo={selectedPhoto}
           photos={displayedPhotos}
           currentIndex={currentIndex}
