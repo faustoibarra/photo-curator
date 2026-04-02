@@ -15,6 +15,7 @@ interface PhotoCardProps {
   scoreBreakdown?: PhotoScore['score_breakdown'] | null
   onClick?: () => void
   onCheckboxChange?: () => void
+  onContextMenu?: (e: React.MouseEvent, photoId: string) => void
 }
 
 const TIER_CLASSES: Record<string, string> = {
@@ -50,6 +51,7 @@ export function PhotoCard({
   scoreBreakdown = null,
   onClick,
   onCheckboxChange,
+  onContextMenu,
 }: PhotoCardProps) {
   const tier = photo.ai_tier
   const isBestOf = compositeScore != null
@@ -59,6 +61,7 @@ export function PhotoCard({
       <button
         type="button"
         onClick={onClick}
+        onContextMenu={onContextMenu ? (e) => onContextMenu(e, photo.id) : undefined}
         className={cn(
           'relative w-full aspect-square overflow-hidden rounded-lg bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all',
           selected && 'ring-2 ring-primary ring-offset-2'

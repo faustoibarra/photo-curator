@@ -672,6 +672,7 @@ export function CollectionView({
           scoreMap={scoreMap}
           onPhotoClick={openPhoto}
           onPhotoSelect={toggleSelect}
+          onPhotoDelete={handlePhotoDelete}
         />
       )}
     </div>

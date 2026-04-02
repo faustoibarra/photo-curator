@@ -215,6 +215,14 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     return NextResponse.json({ error: 'photo_ids required' }, { status: 400 })
   }
 
+  // Check whether the collection cover is among the photos being deleted
+  const { data: collection } = await supabase
+    .from('collections')
+    .select('cover_photo_id')
+    .eq('id', params.id)
+    .single()
+  const coverBeingDeleted = collection?.cover_photo_id != null && photo_ids.includes(collection.cover_photo_id)
+
   const { data: photos } = await supabase
     .from('photos')
     .select('id, storage_path')
@@ -230,6 +238,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     await serviceClient.storage.from('photos').remove(storagePaths)
   }
 
+  // Delete DB records — ON DELETE CASCADE removes sub_collection_photos rows;
+  // ON DELETE SET NULL on collections.cover_photo_id nulls the cover reference.
   const { error } = await supabase
     .from('photos')
     .delete()
@@ -238,6 +248,23 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     .in('id', photo_ids)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // If the cover photo was deleted, promote the most-recently-uploaded remaining photo.
+  // The deleted photos are already gone from the DB, so a plain query is sufficient.
+  if (coverBeingDeleted) {
+    const { data: next } = await supabase
+      .from('photos')
+      .select('id')
+      .eq('collection_id', params.id)
+      .order('uploaded_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    await supabase
+      .from('collections')
+      .update({ cover_photo_id: next?.id ?? null })
+      .eq('id', params.id)
+  }
 
   revalidatePath(`/collections/${params.id}`)
   return NextResponse.json({ success: true })

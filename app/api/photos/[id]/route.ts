@@ -154,10 +154,20 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
   if (!photo) return Response.json({ error: 'Not found' }, { status: 404 })
 
-  // derive thumb path
+  // Check if this photo is the collection cover before deleting
+  const { data: collection } = await supabase
+    .from('collections')
+    .select('cover_photo_id')
+    .eq('id', photo.collection_id)
+    .single()
+  const wasCover = collection?.cover_photo_id === params.id
+
+  // Delete storage files (original + thumbnail)
   const thumbPath = photo.storage_path.replace(/\/([^/_]+)_[^/]+$/, '/thumbs/$1_thumb.jpg')
   await serviceClient.storage.from('photos').remove([photo.storage_path, thumbPath])
 
+  // Delete DB record — ON DELETE CASCADE removes sub_collection_photos rows;
+  // ON DELETE SET NULL on collections.cover_photo_id nulls the cover reference.
   const { error } = await supabase
     .from('photos')
     .delete()
@@ -165,6 +175,22 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
     .eq('user_id', user.id)
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  // If this was the cover photo, promote the most-recently-uploaded remaining photo
+  if (wasCover) {
+    const { data: next } = await supabase
+      .from('photos')
+      .select('id')
+      .eq('collection_id', photo.collection_id)
+      .order('uploaded_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    await supabase
+      .from('collections')
+      .update({ cover_photo_id: next?.id ?? null })
+      .eq('id', photo.collection_id)
+  }
 
   revalidatePath(`/collections/${photo.collection_id}`)
   return Response.json({ success: true })
