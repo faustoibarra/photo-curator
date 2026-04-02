@@ -13,6 +13,7 @@ import {
   Loader2,
   RefreshCw,
   Settings2,
+  Share2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SubCollection } from '@/lib/types'
@@ -60,6 +61,7 @@ export interface CollectionToolbarProps {
   onNewSubCollectionBulk: (selectedIds: string[]) => void
   onGenerateBestOf: () => void
   onRefreshBestOf?: () => void
+  onShareSubCollection?: (sub: SubCollection) => void
   onBulkAnalyze: (ids: string[]) => void
   bulkAnalyzingIds?: Set<string>
   bulkNotice: { message: string; type: 'success' | 'error' } | null
@@ -120,6 +122,7 @@ export function CollectionToolbar({
   onNewSubCollectionBulk,
   onGenerateBestOf,
   onRefreshBestOf,
+  onShareSubCollection,
   onBulkAnalyze,
   bulkAnalyzingIds,
   bulkNotice,
@@ -468,10 +471,21 @@ export function CollectionToolbar({
           </button>
         ))}
 
-        {/* Best Of tab: Refresh + Reconfigure when active */}
-        {activeBestOf && (
+        {/* Active sub-collection actions: Share + Best Of controls */}
+        {activeSubCollection && (
           <div className="flex items-center gap-1 ml-1 mb-0.5 shrink-0">
-            {onRefreshBestOf && (
+            {onShareSubCollection && (
+              <button
+                type="button"
+                onClick={() => onShareSubCollection(activeSubCollection)}
+                title="Share this sub-collection"
+                className="inline-flex items-center gap-1 h-6 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors border border-transparent hover:border-input"
+              >
+                <Share2 className="size-3" />
+                Share
+              </button>
+            )}
+            {activeBestOf && onRefreshBestOf && (
               <button
                 type="button"
                 onClick={onRefreshBestOf}
@@ -482,15 +496,17 @@ export function CollectionToolbar({
                 Refresh
               </button>
             )}
-            <button
-              type="button"
-              onClick={onGenerateBestOf}
-              title="Change configuration"
-              className="inline-flex items-center gap-1 h-6 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors border border-transparent hover:border-input"
-            >
-              <Settings2 className="size-3" />
-              Reconfigure
-            </button>
+            {activeBestOf && (
+              <button
+                type="button"
+                onClick={onGenerateBestOf}
+                title="Change configuration"
+                className="inline-flex items-center gap-1 h-6 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors border border-transparent hover:border-input"
+              >
+                <Settings2 className="size-3" />
+                Reconfigure
+              </button>
+            )}
           </div>
         )}
 

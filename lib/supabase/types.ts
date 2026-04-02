@@ -226,6 +226,7 @@ export type Database = {
           color: string | null
           created_at: string | null
           description: string | null
+          featured_photo_ids: string[] | null
           id: string
           is_best_of: boolean | null
           name: string
@@ -242,6 +243,7 @@ export type Database = {
           color?: string | null
           created_at?: string | null
           description?: string | null
+          featured_photo_ids?: string[] | null
           id?: string
           is_best_of?: boolean | null
           name: string
@@ -258,6 +260,7 @@ export type Database = {
           color?: string | null
           created_at?: string | null
           description?: string | null
+          featured_photo_ids?: string[] | null
           id?: string
           is_best_of?: boolean | null
           name?: string

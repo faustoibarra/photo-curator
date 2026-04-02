@@ -5,6 +5,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { Photo, SubCollection, SubCollectionPhoto } from '@/lib/types'
 import { CollectionToolbar } from '@/components/collections/CollectionToolbar'
 import { NewSubCollectionModal } from '@/components/collections/NewSubCollectionModal'
+import { ShareSettingsModal } from '@/components/collections/ShareSettingsModal'
 import {
   BestOfModal,
   type BestOfConfig,
@@ -109,6 +110,7 @@ export function CollectionView({
   const [newSubModalOpen, setNewSubModalOpen] = useState(false)
   const [bestOfModalOpen, setBestOfModalOpen] = useState(false)
   const [bestOfMeta, setBestOfMeta] = useState<BestOfMeta | null>(null)
+  const [shareModalSub, setShareModalSub] = useState<SubCollection | null>(null)
 
   // Bulk action notice (lifted from toolbar so post-create flow can set it)
   const [bulkNotice, setBulkNotice] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -495,6 +497,24 @@ export function CollectionView({
         onCreated={handleNewSubCollection}
       />
 
+      {shareModalSub && (
+        <ShareSettingsModal
+          open={!!shareModalSub}
+          onOpenChange={(open) => { if (!open) setShareModalSub(null) }}
+          subCollection={shareModalSub}
+          photos={photos.filter((p) =>
+            subCollectionPhotos.some(
+              (sp) => sp.sub_collection_id === shareModalSub.id && sp.photo_id === p.id
+            )
+          )}
+          appUrl={process.env.NEXT_PUBLIC_APP_URL ?? ''}
+          onUpdated={(updated) => {
+            setSubCollections((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+            setShareModalSub(updated)
+          }}
+        />
+      )}
+
       <BestOfModal
         open={bestOfModalOpen}
         onOpenChange={setBestOfModalOpen}
@@ -534,6 +554,7 @@ export function CollectionView({
         onNewSubCollection={() => setNewSubModalOpen(true)}
         onNewSubCollectionBulk={handleNewSubCollectionBulk}
         onGenerateBestOf={() => setBestOfModalOpen(true)}
+        onShareSubCollection={(sub) => setShareModalSub(sub)}
         bulkNotice={bulkNotice}
         onBulkNoticeDismiss={() => setBulkNotice(null)}
         onBulkAddResult={handleBulkAddResult}
