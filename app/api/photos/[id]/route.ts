@@ -1,10 +1,112 @@
 import { NextRequest } from 'next/server'
+import sharp from 'sharp'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
+import { analyzePhoto, CollectionType } from '@/lib/anthropic/analyze'
+
+export const dynamic = 'force-dynamic'
 
 interface RouteContext {
   params: { id: string }
+}
+
+export async function POST(_req: NextRequest, { params }: RouteContext) {
+  const supabase = createClient()
+  const serviceClient = createServiceClient()
+  const startTime = Date.now()
+  const photoId = params.id
+
+  console.log(`[Analysis] 🔄 Starting analysis for photo ${photoId}`)
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    console.error(`[Analysis] ✗ Unauthorized for photo ${photoId}`)
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: photo } = await supabase
+    .from('photos')
+    .select('*')
+    .eq('id', photoId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!photo) {
+    console.error(`[Analysis] ✗ Photo not found: ${photoId}`)
+    return Response.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  const { data: collection } = await supabase
+    .from('collections')
+    .select('type')
+    .eq('id', photo.collection_id)
+    .single()
+
+  const collectionType = collection?.type as CollectionType | undefined
+
+  try {
+    console.log(`[Analysis] 📥 Downloading photo ${photoId}`)
+    const { data: blob, error: downloadError } = await serviceClient.storage
+      .from('photos')
+      .download(photo.storage_path)
+
+    if (downloadError || !blob) {
+      throw new Error(`Failed to download: ${downloadError?.message || 'unknown'}`)
+    }
+
+    const imageBuffer = Buffer.from(await blob.arrayBuffer())
+    console.log(`[Analysis] 📥 Downloaded ${imageBuffer.byteLength} bytes`)
+
+    console.log(`[Analysis] 📐 Resizing photo ${photoId}`)
+    const resized = await sharp(imageBuffer)
+      .resize(1500, 1500, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer()
+
+    const base64 = resized.toString('base64')
+
+    console.log(`[Analysis] 🤖 Calling Claude API for photo ${photoId} (${base64.length} chars)`)
+    const apiStart = Date.now()
+    const analysis = await analyzePhoto(base64, collectionType)
+    console.log(`[Analysis] ✓ Claude API done in ${Date.now() - apiStart}ms`)
+
+    console.log(`[Analysis] 💾 Storing results for photo ${photoId}`)
+    const { data: updated, error: updateError } = await supabase
+      .from('photos')
+      .update({
+        ai_title: analysis.title,
+        ai_caption: analysis.caption,
+        ai_overall_rating: analysis.overall_rating,
+        ai_technical_rating: analysis.technical_rating,
+        ai_composition_rating: analysis.composition_rating,
+        ai_light_rating: analysis.light_rating,
+        ai_impact_rating: analysis.impact_rating,
+        ai_print_rating: analysis.print_rating,
+        ai_bw_rating: analysis.bw_rating,
+        ai_tier: analysis.tier,
+        ai_critique: analysis.critique,
+        ai_crop_suggestion: analysis.crop_suggestion,
+        ai_bw_rationale: analysis.bw_rationale,
+        ai_tags: analysis.tags,
+        ai_analyzed_at: new Date().toISOString(),
+      })
+      .eq('id', photoId)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (updateError) throw new Error(`DB update failed: ${updateError.message}`)
+
+    console.log(`[Analysis] ✅ Photo ${photoId} done in ${Date.now() - startTime}ms`)
+    if (updated?.collection_id) revalidatePath(`/collections/${updated.collection_id}`)
+    return Response.json(updated)
+
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`[Analysis] ✗ Photo ${photoId} failed after ${Date.now() - startTime}ms: ${message}`)
+    return Response.json({ error: message }, { status: 500 })
+  }
 }
 
 export async function PATCH(req: NextRequest, { params }: RouteContext) {

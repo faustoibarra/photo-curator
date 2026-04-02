@@ -21,9 +21,10 @@ interface NewCollectionModalProps {
 }
 
 const COLLECTION_TYPES = [
-  { value: 'trip', label: 'Trip' },
-  { value: 'event', label: 'Event' },
-  { value: 'project', label: 'Project' },
+  { value: 'nature trip', label: 'Nature Trip' },
+  { value: 'city trip', label: 'City Trip' },
+  { value: 'sports', label: 'Sports' },
+  { value: 'social event', label: 'Social Event' },
 ] as const
 
 export function NewCollectionModal({
@@ -106,7 +107,7 @@ export function NewCollectionModal({
             <select
               id="type"
               name="type"
-              defaultValue="trip"
+              defaultValue="nature trip"
               disabled={isPending}
               className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-0 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
             >

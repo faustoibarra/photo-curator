@@ -10,9 +10,10 @@ interface CollectionCardProps {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  trip: 'Trip',
-  event: 'Event',
-  project: 'Project',
+  'nature trip': 'Nature Trip',
+  'city trip': 'City Trip',
+  'sports': 'Sports',
+  'social event': 'Social Event',
 }
 
 function formatDate(dateStr: string) {
@@ -44,7 +45,7 @@ export function CollectionCard({ collection }: CollectionCardProps) {
             {collection.name}
           </h3>
           <Badge variant="secondary" className="shrink-0 text-xs">
-            {collection.type ? (TYPE_LABELS[collection.type] ?? collection.type) : 'Trip'}
+            {collection.type ? (TYPE_LABELS[collection.type] ?? collection.type) : 'Nature Trip'}
           </Badge>
         </div>
 

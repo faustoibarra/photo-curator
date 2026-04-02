@@ -35,13 +35,13 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-  const { name, description, type = 'trip' } = body
+  const { name, description, type = 'nature trip' } = body
 
   if (!name?.trim()) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400 })
   }
 
-  if (!['trip', 'event', 'project'].includes(type)) {
+  if (!['nature trip', 'city trip', 'sports', 'social event'].includes(type)) {
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
   }
 

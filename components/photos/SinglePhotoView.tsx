@@ -40,12 +40,14 @@ interface SinglePhotoViewProps {
 }
 
 const TIER_CLASSES: Record<string, string> = {
+  'A+': 'bg-emerald-500 text-white',
   A: 'bg-teal-500 text-white',
   B: 'bg-slate-500 text-white',
   C: 'bg-gray-400 text-white',
 }
 
 const TIER_LABELS: Record<string, string> = {
+  'A+': 'Exceptional — wall-print worthy',
   A: 'Wall-print worthy',
   B: 'Gallery quality',
   C: 'Documentary',
@@ -127,6 +129,8 @@ export function SinglePhotoView({
 }: SinglePhotoViewProps) {
   const [dangerOpen, setDangerOpen] = useState(false)
   const [critiqueOpen, setCritiqueOpen] = useState(false)
+  const [cropOpen, setCropOpen] = useState(false)
+  const [bwOpen, setBwOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [savingRating, setSavingRating] = useState(false)
@@ -137,7 +141,7 @@ export function SinglePhotoView({
 
   const hasPrev = currentIndex > 0
   const hasNext = currentIndex < photos.length - 1
-  const isAnalyzed = !!photo.ai_analyzed_at
+  const isAnalyzed = !!photo.ai_analyzed_at || photo.ai_overall_rating != null
 
   // Sync notes field when photo ID changes
   useEffect(() => {
@@ -227,7 +231,7 @@ export function SinglePhotoView({
     if (isAnalyzed || analyzing) return
     setAnalyzing(true)
     try {
-      const res = await fetch(`/api/photos/${photo.id}/analyze`, {
+      const res = await fetch(`/api/photos/${photo.id}`, {
         method: 'POST',
       })
       if (res.ok) {
@@ -377,10 +381,9 @@ export function SinglePhotoView({
                   </>
                 ) : (
                   <>
-                    <Loader2 className="size-6 text-muted-foreground animate-spin" />
-                    <p className="text-sm text-muted-foreground">Analysis pending</p>
+                    <p className="text-sm text-muted-foreground">Not yet analyzed</p>
                     <p className="text-xs text-muted-foreground/70">
-                      Click "Analyze" or press <kbd className="font-mono">a</kbd> to start analysis.
+                      Click &ldquo;Analyze&rdquo; or press <kbd className="font-mono">a</kbd> to start analysis.
                     </p>
                   </>
                 )}
@@ -443,20 +446,46 @@ export function SinglePhotoView({
                 {/* Crop suggestion */}
                 {photo.ai_crop_suggestion && (
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Crop / edit</p>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      {photo.ai_crop_suggestion}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setCropOpen((v) => !v)}
+                      className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
+                    >
+                      Crop / edit
+                      {cropOpen ? (
+                        <ChevronUp className="size-3 ml-auto" />
+                      ) : (
+                        <ChevronDown className="size-3 ml-auto" />
+                      )}
+                    </button>
+                    {cropOpen && (
+                      <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                        {photo.ai_crop_suggestion}
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {/* B&W rationale */}
                 {photo.ai_bw_rationale && (
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">B&W suitability</p>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      {photo.ai_bw_rationale}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setBwOpen((v) => !v)}
+                      className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
+                    >
+                      B&W suitability
+                      {bwOpen ? (
+                        <ChevronUp className="size-3 ml-auto" />
+                      ) : (
+                        <ChevronDown className="size-3 ml-auto" />
+                      )}
+                    </button>
+                    {bwOpen && (
+                      <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                        {photo.ai_bw_rationale}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -552,6 +581,15 @@ export function SinglePhotoView({
                         onChange={() => onSubCollectionToggle(sub.id, photo.id, !isMember)}
                         className="rounded border-input size-4 accent-primary cursor-pointer"
                       />
+                      {sub.color && (
+                        <span
+                          className="size-2 rounded-full shrink-0"
+                          style={{ backgroundColor: sub.color }}
+                        />
+                      )}
+                      {sub.is_best_of && (
+                        <Sparkles className="size-3 text-amber-500 shrink-0" />
+                      )}
                       <span className="text-sm group-hover/sub:text-foreground transition-colors">
                         {sub.name}
                       </span>

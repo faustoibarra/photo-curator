@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import sharp from 'sharp'
+
+export const dynamic = 'force-dynamic'
 import { randomUUID } from 'crypto'
 
 // Accepted MIME types

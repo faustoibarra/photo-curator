@@ -10,10 +10,10 @@ export async function createCollection(
 ): Promise<CreateCollectionResult> {
   const name = (formData.get('name') as string)?.trim()
   const description = (formData.get('description') as string)?.trim() || null
-  const type = (formData.get('type') as string) || 'trip'
+  const type = (formData.get('type') as string) || 'nature trip'
 
   if (!name) return { error: 'Collection name is required.' }
-  if (!['trip', 'event', 'project'].includes(type))
+  if (!['nature trip', 'city trip', 'sports', 'social event'].includes(type))
     return { error: 'Invalid collection type.' }
 
   const supabase = createClient()
@@ -27,7 +27,7 @@ export async function createCollection(
   const { error } = await supabase.from('collections').insert({
     name,
     description,
-    type: type as 'trip' | 'event' | 'project',
+    type: type as 'nature trip' | 'city trip' | 'sports' | 'social event',
     user_id: user.id,
   })
 

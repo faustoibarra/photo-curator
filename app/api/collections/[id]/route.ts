@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   _request: Request,
   { params }: { params: { id: string } }
@@ -16,7 +18,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from('collections')
-    .select('*, photos!photos_collection_id_fkey(count)')
+    .select('*')
     .eq('id', params.id)
     .single()
 
@@ -25,7 +27,17 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  return NextResponse.json(data)
+  // Fetch photos for this collection
+  const { data: photos } = await supabase
+    .from('photos')
+    .select('*')
+    .eq('collection_id', params.id)
+    .order('uploaded_at', { ascending: false })
+
+  return NextResponse.json({
+    ...data,
+    photos: photos ?? [],
+  })
 }
 
 export async function PATCH(

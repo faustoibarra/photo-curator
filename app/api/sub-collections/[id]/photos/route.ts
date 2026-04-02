@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+export const dynamic = 'force-dynamic'
+
 interface RouteContext {
   params: { id: string }
 }
@@ -27,12 +29,17 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     photo_id: pid,
   }))
 
-  const { error } = await supabase
+  // Use upsert with ignoreDuplicates: true — generates ON CONFLICT DO NOTHING.
+  // This skips photos already in the sub-collection without needing an UPDATE RLS policy.
+  // Plain upsert (ON CONFLICT DO UPDATE) silently fails when there is no UPDATE RLS policy.
+  const { data: inserted, error } = await supabase
     .from('sub_collection_photos')
-    .upsert(rows, { onConflict: 'sub_collection_id,photo_id' })
+    .upsert(rows, { ignoreDuplicates: true, onConflict: 'sub_collection_id,photo_id' })
+    .select('photo_id')
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
-  return Response.json({ success: true })
+
+  return Response.json({ success: true, added: inserted?.length ?? rows.length })
 }
 
 export async function DELETE(req: NextRequest, { params }: RouteContext) {

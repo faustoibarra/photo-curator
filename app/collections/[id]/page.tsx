@@ -11,9 +11,10 @@ interface CollectionPageProps {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  trip: 'Trip',
-  event: 'Event',
-  project: 'Project',
+  'nature trip': 'Nature Trip',
+  'city trip': 'City Trip',
+  'sports': 'Sports',
+  'social event': 'Social Event',
 }
 
 const btnClass =
@@ -85,7 +86,7 @@ export default async function CollectionPage({ params }: CollectionPageProps) {
               <Badge variant="secondary">
                 {collection.type
                   ? (TYPE_LABELS[collection.type] ?? collection.type)
-                  : 'Trip'}
+                  : 'Nature Trip'}
               </Badge>
               {photoList.length > 0 && (
                 <span className="text-sm text-muted-foreground">

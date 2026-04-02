@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
 import { Upload, X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -35,7 +34,6 @@ const ACCEPTED = {
 }
 
 export function UploadZone({ collectionId }: UploadZoneProps) {
-  const router = useRouter()
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [duplicates, setDuplicates] = useState<DuplicateConflict[]>([])
   const [showModal, setShowModal] = useState(false)
@@ -215,7 +213,7 @@ export function UploadZone({ collectionId }: UploadZoneProps) {
 
             <div className="flex gap-2">
               {allDone ? (
-                <Button onClick={() => { router.refresh(); router.push(`/collections/${collectionId}`) }}>
+                <Button onClick={() => { window.location.href = `/collections/${collectionId}` }}>
                   View collection →
                 </Button>
               ) : (
