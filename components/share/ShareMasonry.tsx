@@ -3,11 +3,13 @@
 import Image from 'next/image'
 import { Download } from 'lucide-react'
 import type { Photo, SubCollection } from '@/lib/types'
+import { resolvePhotoUrl } from '@/lib/bw-profiles'
 
 interface ShareMasonryProps {
   subCollection: SubCollection
   photos: Photo[]
   photographerName: string | null
+  forceBw?: boolean
   onPhotoClick: (index: number) => void
 }
 
@@ -15,6 +17,7 @@ export default function ShareMasonry({
   subCollection,
   photos,
   photographerName,
+  forceBw = false,
   onPhotoClick,
 }: ShareMasonryProps) {
   const allowDownloads = subCollection.share_allow_downloads ?? false
@@ -58,13 +61,19 @@ export default function ShareMasonry({
             }}
             onClick={() => onPhotoClick(index)}
           >
-            <Image
-              src={photo.storage_url}
-              alt={photo.ai_title ?? photo.filename}
-              width={photo.width ?? 800}
-              height={photo.height ?? 600}
-              className="w-full h-auto block transition-transform duration-500 group-hover:scale-105"
-            />
+            {(() => {
+              const resolved = resolvePhotoUrl(photo, forceBw)
+              return (
+                <Image
+                  src={resolved.url}
+                  alt={photo.ai_title ?? photo.filename}
+                  width={photo.width ?? 800}
+                  height={photo.height ?? 600}
+                  className="w-full h-auto block transition-transform duration-500 group-hover:scale-105"
+                  style={resolved.cssFilter ? { filter: resolved.cssFilter } : undefined}
+                />
+              )
+            })()}
             {/* Title overlay on hover */}
             {photo.ai_title && (
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3">

@@ -17,7 +17,7 @@ import { SinglePhotoView } from './SinglePhotoView'
 
 export type TierFilter = 'all' | 'A' | 'B' | 'C'  // 'A' matches both A and A+
 export type AnalyzedFilter = 'all' | 'analyzed' | 'unanalyzed'
-export type SortOption = 'upload_date' | 'ai_rating' | 'user_rating' | 'filename'
+export type SortOption = 'upload_date' | 'ai_rating' | 'user_rating' | 'filename' | 'bw_score'
 
 interface CollectionViewProps {
   initialPhotos: Photo[]
@@ -56,6 +56,12 @@ function filterAndSort(
       }
       case 'user_rating':
         return (b.user_rating ?? -1) - (a.user_rating ?? -1)
+      case 'bw_score': {
+        const tierA = TIER_ORDER[a.ai_tier ?? ''] ?? 99
+        const tierB = TIER_ORDER[b.ai_tier ?? ''] ?? 99
+        if (tierA !== tierB) return tierA - tierB
+        return (b.ai_bw_rating ?? -1) - (a.ai_bw_rating ?? -1)
+      }
       case 'filename':
         return a.filename.localeCompare(b.filename)
       case 'upload_date':
@@ -88,6 +94,7 @@ export function CollectionView({
   // Analysis queue state
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
   const [analyzeAllRunning, setAnalyzeAllRunning] = useState(false)
+  const [analyzeNotice, setAnalyzeNotice] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
   useEffect(() => setPhotos(initialPhotos), [initialPhotos])
   useEffect(() => setSubCollections(initialSubCollections), [initialSubCollections])
@@ -203,18 +210,23 @@ export function CollectionView({
   }, [])
 
   const analyzePhoto = useCallback(
-    async (photoId: string) => {
+    async (photoId: string): Promise<'ok' | 'billing' | 'error'> => {
       setAnalyzingIds((prev) => new Set(prev).add(photoId))
       try {
         const res = await fetch(`/api/photos/${photoId}`, { method: 'POST' })
         if (res.ok) {
           const updated = await res.json()
           handlePhotoUpdate(updated)
+          return 'ok'
         } else {
+          const data = await res.json().catch(() => ({}))
+          if (data.billing) return 'billing'
           console.error(`[Analysis] Failed for ${photoId}: ${res.status}`)
+          return 'error'
         }
       } catch (err) {
         console.error(`[Analysis] Error for ${photoId}:`, err)
+        return 'error'
       } finally {
         setAnalyzingIds((prev) => {
           const next = new Set(prev)
@@ -229,11 +241,31 @@ export function CollectionView({
   const handleAnalyzeAll = useCallback(async () => {
     if (analyzeAllRunning) return
     const unanalyzed = photos.filter((p) => !p.ai_analyzed_at && !analyzingIds.has(p.id))
-    if (unanalyzed.length === 0) return
+    if (unanalyzed.length === 0) {
+      setAnalyzeNotice({ message: 'All photos are already analyzed.', type: 'success' })
+      return
+    }
 
     setAnalyzeAllRunning(true)
-    for (const photo of unanalyzed) {
-      await analyzePhoto(photo.id)
+    setAnalyzeNotice(null)
+    let billingError = false
+    for (let i = 0; i < unanalyzed.length; i += 3) {
+      const results = await Promise.all(unanalyzed.slice(i, i + 3).map((p) => analyzePhoto(p.id)))
+      if (results.includes('billing')) {
+        setAnalyzeNotice({
+          message: 'Analysis stopped — add credits at console.anthropic.com to continue.',
+          type: 'error',
+        })
+        billingError = true
+        break
+      }
+    }
+    if (!billingError) {
+      const n = unanalyzed.length
+      setAnalyzeNotice({
+        message: `Analysis complete — ${n} photo${n !== 1 ? 's' : ''} analyzed.`,
+        type: 'success',
+      })
     }
     setAnalyzeAllRunning(false)
   }, [photos, analyzingIds, analyzeAllRunning, analyzePhoto])
@@ -570,6 +602,30 @@ export function CollectionView({
         bulkAnalyzingIds={analyzingIds}
       />
 
+      {/* Analyze-all notice */}
+      {analyzeNotice && (
+        <div
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border ${
+            analyzeNotice.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-950/30 dark:border-green-800 dark:text-green-300'
+              : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-800 dark:text-red-300'
+          }`}
+        >
+          <span className="flex-1">
+            {analyzeNotice.type === 'success' ? '✓ ' : '✕ '}
+            {analyzeNotice.message}
+          </span>
+          <button
+            type="button"
+            onClick={() => setAnalyzeNotice(null)}
+            className="opacity-50 hover:opacity-100 text-xs"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Best Of generation result banner */}
       {bestOfMeta && activeSubCollection?.is_best_of && (
         <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm dark:bg-amber-950/30 dark:border-amber-800">
@@ -616,6 +672,7 @@ export function CollectionView({
           currentIndex={currentIndex}
           subCollections={subCollections}
           subCollectionPhotos={subCollectionPhotos}
+          forceBw={activeSubCollection?.is_bw ?? false}
           onClose={closePhoto}
           onNext={goNext}
           onPrev={goPrev}
@@ -670,6 +727,8 @@ export function CollectionView({
           selectedIds={selectedIds}
           analyzingIds={analyzingIds}
           scoreMap={scoreMap}
+          showBwScore={sortBy === 'bw_score'}
+          forceBw={activeSubCollection?.is_bw ?? false}
           onPhotoClick={openPhoto}
           onPhotoSelect={toggleSelect}
           onPhotoDelete={handlePhotoDelete}

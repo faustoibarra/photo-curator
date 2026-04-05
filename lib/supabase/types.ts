@@ -92,6 +92,8 @@ export type Database = {
           ai_technical_rating: number | null
           ai_tier: string | null
           ai_title: string | null
+          bw_processed_url: string | null
+          bw_profile: string | null
           collection_id: string
           file_size: number | null
           filename: string
@@ -123,6 +125,8 @@ export type Database = {
           ai_technical_rating?: number | null
           ai_tier?: string | null
           ai_title?: string | null
+          bw_processed_url?: string | null
+          bw_profile?: string | null
           collection_id: string
           file_size?: number | null
           filename: string
@@ -154,6 +158,8 @@ export type Database = {
           ai_technical_rating?: number | null
           ai_tier?: string | null
           ai_title?: string | null
+          bw_processed_url?: string | null
+          bw_profile?: string | null
           collection_id?: string
           file_size?: number | null
           filename?: string
@@ -229,6 +235,7 @@ export type Database = {
           featured_photo_ids: string[] | null
           id: string
           is_best_of: boolean | null
+          is_bw: boolean
           name: string
           share_allow_downloads: boolean | null
           share_created_at: string | null
@@ -246,6 +253,7 @@ export type Database = {
           featured_photo_ids?: string[] | null
           id?: string
           is_best_of?: boolean | null
+          is_bw?: boolean
           name: string
           share_allow_downloads?: boolean | null
           share_created_at?: string | null
@@ -263,6 +271,7 @@ export type Database = {
           featured_photo_ids?: string[] | null
           id?: string
           is_best_of?: boolean | null
+          is_bw?: boolean
           name?: string
           share_allow_downloads?: boolean | null
           share_created_at?: string | null

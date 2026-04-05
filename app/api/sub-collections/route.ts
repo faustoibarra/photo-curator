@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { collection_id, name, description, color } = await req.json()
+  const { collection_id, name, description, color, is_bw } = await req.json()
   if (!collection_id || !name) {
     return Response.json({ error: 'collection_id and name required' }, { status: 400 })
   }
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('sub_collections')
-    .insert({ collection_id, user_id: user.id, name, description, color })
+    .insert({ collection_id, user_id: user.id, name, description, color, is_bw: is_bw ?? false })
     .select()
     .single()
 

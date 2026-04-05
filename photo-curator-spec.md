@@ -2,7 +2,7 @@
 
 ## Overview
 
-PhotoCurator is a web application for photographers to organize, analyze, and curate photos from trips and events. It uses AI to analyze each photo on multiple dimensions — technical quality, composition, emotional impact, print potential, and B&W suitability — and helps the photographer make final selection decisions through an intuitive browsing and rating UI.
+PhotoCurator is a web application for photographers to organize, analyze, and curate photos from nature trips, city trips, sports and social events. It uses AI to analyze each photo on multiple dimensions — technical quality, composition, emotional impact, print potential, and B&W suitability — and helps the photographer make final selection decisions through an intuitive browsing and rating UI.
 
 The primary use case is post-trip curation: uploading a batch of edited photos, letting AI provide a first-pass analysis and critique, then quickly making final decisions about which photos go to a wall print collection, a social media set, a gallery, etc.
 
@@ -41,18 +41,20 @@ The primary use case is post-trip curation: uploading a batch of edited photos, 
 ## Database Schema
 
 ### `collections`
+
 ```sql
 id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
 user_id         uuid REFERENCES auth.users NOT NULL
 name            text NOT NULL
 description     text
 cover_photo_id  uuid  -- FK to photos, set after insert
-type            text DEFAULT 'trip'  -- 'trip' | 'event' | 'project'
+type            text DEFAULT 'nature trip'  -- 'nature trip' | 'city trip' | 'sports' | 'event'
 created_at      timestamptz DEFAULT now()
 updated_at      timestamptz DEFAULT now()
 ```
 
 ### `photos`
+
 ```sql
 id                  uuid PRIMARY KEY DEFAULT gen_random_uuid()
 collection_id       uuid REFERENCES collections NOT NULL
@@ -88,6 +90,7 @@ sort_order          integer DEFAULT 0
 ```
 
 ### `sub_collections`
+
 ```sql
 id                    uuid PRIMARY KEY DEFAULT gen_random_uuid()
 collection_id         uuid REFERENCES collections NOT NULL
@@ -106,6 +109,7 @@ created_at            timestamptz DEFAULT now()
 ```
 
 ### `sub_collection_photos`
+
 ```sql
 sub_collection_id   uuid REFERENCES sub_collections NOT NULL
 photo_id            uuid REFERENCES photos NOT NULL
@@ -118,14 +122,15 @@ PRIMARY KEY (sub_collection_id, photo_id)
 ## AI Analysis
 
 ### Model
+
 Use `claude-sonnet-4-5` with vision (base64 image input). Resize images to max 1500px on the long edge before sending to the API to control token cost.
 
 ### Analysis Prompt
 
-Send each photo with a structured prompt requesting JSON output. The system prompt should define the persona of an experienced landscape/travel photographer and photo editor. The user prompt should request:
+Send each photo with a structured prompt requesting JSON output. The system prompt should define the persona of an experienced landscape/travel/sports photographer and photo editor. The user prompt should request:
 
 ```
-Analyze this photograph as an expert landscape and travel photographer and photo editor. 
+Analyze this photograph as an expert landscape photographer and photo editor. 
 Return a JSON object with the following fields:
 
 {
@@ -150,6 +155,13 @@ Tier definitions:
 - B: Gallery-quality. Good technically and compositionally but missing one key element (light, foreground, decisive moment). Worth including in a curated set.
 - C: Documentary or personal value only. Technical or compositional issues prevent gallery use.
 ```
+
+Adjust the user prompt as follows:
+
+- If the collection is a nature trip, start the user prompt with "Analyze this photograph as an expert landscape photographer and photo editor"
+- If it's a city trip, start it with "Analyze this photograph as an expert travel and street photographer and photo editor"
+- If it's a sports event, start it with "Analyze this photograph as an expert sports photographer and photo editor"
+- If it's a social event, start it with "Analyze this photograph as an expert event photographer and photo editor"
 
 ### Analysis Queue
 
@@ -176,6 +188,7 @@ composite_score = (ai_weight × ai_score) + (user_weight × user_score_normalize
 ```
 
 Where:
+
 - `ai_score` = `ai_overall_rating` (1–10 scale)
 - `user_score_normalized` = `user_rating × 2` (converts 1–5 stars → 2–10 scale, to match AI scale)
 - `ai_weight` + `user_weight` = 1.0
@@ -185,6 +198,7 @@ Where:
 Tier is also used as a **hard gate**: photos with `ai_tier = 'C'` are excluded by default (configurable).
 
 **Full scoring logic in pseudocode:**
+
 ```
 function compositeScore(photo, config):
   if photo.ai_tier == 'C' and config.exclude_tier_c:
@@ -204,16 +218,18 @@ function compositeScore(photo, config):
 
 When generating a Best Of collection, the user can configure:
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `target_count` | 20 | How many photos to include |
-| `ai_weight` | 0.6 | Weight given to AI rating (0.0–1.0) |
-| `user_weight` | 0.4 | Weight given to user rating (auto-adjusted if no user ratings exist) |
-| `exclude_tier_c` | true | Exclude photos with AI tier C |
-| `min_ai_rating` | 7.0 | Minimum AI overall rating to be eligible |
-| `min_user_rating` | null | Minimum user star rating to be eligible (null = no minimum) |
-| `require_analyzed` | true | Only include photos that have been AI-analyzed |
-| `name` | "Best Of" | Name for the sub-collection |
+
+| Parameter          | Default   | Description                                                          |
+| ------------------ | --------- | -------------------------------------------------------------------- |
+| `target_count`     | 20        | How many photos to include                                           |
+| `ai_weight`        | 0.6       | Weight given to AI rating (0.0–1.0)                                  |
+| `user_weight`      | 0.4       | Weight given to user rating (auto-adjusted if no user ratings exist) |
+| `exclude_tier_c`   | true      | Exclude photos with AI tier C                                        |
+| `min_ai_rating`    | 7.0       | Minimum AI overall rating to be eligible                             |
+| `min_user_rating`  | null      | Minimum user star rating to be eligible (null = no minimum)          |
+| `require_analyzed` | true      | Only include photos that have been AI-analyzed                       |
+| `name`             | "Best Of" | Name for the sub-collection                                          |
+
 
 The `best_of_config` jsonb column on `sub_collections` stores the exact config used so it can be displayed in the UI and reused on refresh.
 
@@ -228,6 +244,7 @@ If two photos have very similar scores (within 0.3 points) and share the same `a
 Generates or regenerates the Best Of sub-collection.
 
 **Request body:**
+
 ```json
 {
   "target_count": 20,
@@ -243,6 +260,7 @@ Generates or regenerates the Best Of sub-collection.
 ```
 
 **Server logic:**
+
 1. Fetch all photos in the collection where `ai_analyzed_at IS NOT NULL` (if `require_analyzed`)
 2. Apply hard gates: tier C exclusion, min ratings
 3. Compute composite score for each eligible photo
@@ -259,7 +277,9 @@ Generates or regenerates the Best Of sub-collection.
 ### UI
 
 #### Trigger Point
+
 The "Generate Best Of" button lives in two places:
+
 1. In the collection toolbar, next to "Analyze All" — a ✨ **"Best Of"** button
 2. In the sub-collections management panel
 
@@ -296,6 +316,7 @@ Clicking it opens a **Best Of Configuration Modal**.
 ```
 
 Notes on the modal:
+
 - The slider adjusts both weights simultaneously (they sum to 1.0)
 - Show a count of how many photos have user ratings vs. total — helps the user understand how much weight their ratings will contribute
 - If zero photos have user ratings, hide the weight slider entirely and show: *"You haven't rated any photos yet. Best Of will be based entirely on AI ratings."*
@@ -306,6 +327,7 @@ Notes on the modal:
 Once generated, the Best Of sub-collection appears as a tab in the collection view like any other sub-collection, but with a ✨ icon prefix and a distinct color (gold/amber).
 
 The tab also shows:
+
 - When it was last generated
 - A **"Refresh"** button that re-runs generation with the same config (useful after adding ratings or new photos)
 - A **"Reconfigure"** button that opens the modal again with current settings pre-filled
@@ -319,11 +341,13 @@ In the grid view when the Best Of tab is active, each photo card shows its **com
 ```
 
 Where 9.1 is the composite score. Hovering/tapping the score shows a tooltip:
+
 ```
 AI: 8.8 (×0.6) + You: 9.5 (×0.4) = 9.1
 ```
 
 If the photo has no user rating:
+
 ```
 AI only: 8.8
 (no user rating)
@@ -353,18 +377,22 @@ score_breakdown   jsonb          -- { ai_contribution, user_contribution, ai_wei
 ## Application Pages & Routes
 
 ### `/` — Landing / Dashboard
+
 - If not logged in: marketing landing page with login/signup
 - If logged in: redirect to `/collections`
 
 ### `/collections` — Collections List
+
 - Grid of collection cards showing: cover photo, name, photo count, date
 - "New Collection" button → modal to create
 - Click collection → `/collections/[id]`
 
 ### `/collections/[id]` — Collection View
+
 This is the primary working view. It has two main modes:
 
 #### Grid View (default)
+
 - Responsive photo grid (3–5 columns depending on viewport)
 - Each photo card shows:
   - Thumbnail
@@ -388,6 +416,7 @@ This is the primary working view. It has two main modes:
   - Selected count indicator
 
 #### Single Photo View
+
 - Full-width photo with prev/next navigation (keyboard arrows supported)
 - Left panel or drawer:
   - AI Analysis card:
@@ -409,6 +438,7 @@ This is the primary working view. It has two main modes:
     - "Remove from collection" button — removes this photo from the collection with confirmation (see Photo Deletion section)
 
 ### `/collections/[id]/upload` — Upload View
+
 - Large drag-and-drop zone
 - Also supports "Browse files" button
 - Accepts: JPG, PNG, TIFF, HEIC, WebP
@@ -418,6 +448,7 @@ This is the primary working view. It has two main modes:
 - **Duplicate detection and conflict resolution** — see Duplicate Handling section below
 
 ### `/collections/new` — New Collection Modal (or page)
+
 - Name (required)
 - Description (optional)
 - Type selector: Trip / Event / Project
@@ -427,24 +458,29 @@ This is the primary working view. It has two main modes:
 ## UI/UX Details
 
 ### Photo Grid
+
 - Use CSS Grid with `auto-fill` / `minmax` for responsive columns
 - Lazy-load thumbnails using `IntersectionObserver`
 - Clicking a photo in grid opens Single Photo View (not a new page — use a slide-over or URL state)
 - In multi-select mode, clicking a photo toggles its checkbox; clicking the thumbnail still opens it in single view via a small "expand" icon
 
 ### Single Photo Navigation
+
 - Left/right arrow keys navigate between photos in the current filtered/sorted set
 - Swipe support on mobile
 - "Back to grid" button or ESC key exits to grid
 - The URL updates as you navigate (e.g., `/collections/[id]?photo=[photoId]`) so it's shareable and back-button works
 
 ### AI Analysis Display
+
 Design the critique panel to feel editorial and authoritative, not clinical. Use a clean serif or readable sans font for the critique text. Display ratings as both numbers and subtle visual indicators. The tier badge (A/B/C) should be prominent and color-coded:
+
 - **A** — green/teal
 - **B** — blue/slate  
 - **C** — gray
 
 ### Sub-Collections
+
 - Displayed as tabs below the collection title
 - Color-coded labels (user can pick a color when creating)
 - Default sub-collections to create for new collections: none (user defines their own)
@@ -454,22 +490,26 @@ Design the critique panel to feel editorial and authoritative, not clinical. Use
 ### Photo Deletion
 
 Removing a photo from a collection is a destructive action that cascades:
+
 1. Deletes the photo record from the `photos` table
 2. Deletes all `sub_collection_photos` rows that reference this photo
 3. Deletes the original and thumbnail files from Supabase Storage
 4. If the photo was the collection's `cover_photo_id`, resets cover to the next available photo
 
 **Single photo deletion (from single photo view):**
+
 - "Remove from collection" button in the danger zone card
 - Confirm dialog: *"Remove [filename] from this collection? This will also remove it from any sub-collections and cannot be undone."*
 - After deletion, auto-advances to the next photo in the current view
 
 **Bulk deletion (from grid multi-select):**
+
 - "Remove from collection" in the bulk action bar
 - Confirm dialog showing count: *"Remove 7 photos from this collection? They will also be removed from any sub-collections and cannot be undone."*
 - After deletion, selected photos disappear from grid; selection is cleared
 
 **Right-click / context menu on photo card (grid view):**
+
 - "Remove from collection" option in the context menu as a shortcut to single-photo deletion without entering single view
 
 ---
@@ -479,6 +519,7 @@ Removing a photo from a collection is a destructive action that cascades:
 Before uploading begins, the server checks for filename collisions within the same collection. The conflict resolution flow is as follows:
 
 #### Detection
+
 When files are added to the upload queue (on drop or browse selection), the client sends all filenames to `POST /api/collections/[id]/check-duplicates` before any uploads start. The server returns a list of which filenames already exist, along with the existing photo's thumbnail URL, upload date, and current AI rating (if analyzed).
 
 #### Conflict Resolution Modal
@@ -516,24 +557,31 @@ If any duplicates are detected, a modal appears **before uploading begins**:
 
 #### Resolution Options (per photo)
 
-| Option | Behavior |
-|--------|----------|
-| **Skip** | Do not upload this file; the existing version is kept unchanged |
-| **Replace** | Upload the new file; overwrite the storage object; re-run AI analysis; preserve user rating and notes from the existing record |
-| **Keep both** | Upload as a new photo with a de-duplicated filename (e.g., `FI207222_2.jpg`); the original is untouched |
+
+| Option        | Behavior                                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Skip**      | Do not upload this file; the existing version is kept unchanged                                                                |
+| **Replace**   | Upload the new file; overwrite the storage object; re-run AI analysis; preserve user rating and notes from the existing record |
+| **Keep both** | Upload as a new photo with a de-duplicated filename (e.g., `FI207222_2.jpg`); the original is untouched                        |
+
 
 #### "Apply to all" Shortcut
+
 The "Apply to all" dropdown sets the same resolution for all listed duplicates in one click. Options: Skip all / Replace all / Keep both for all. Individual overrides still take precedence if set before clicking "Apply to all".
 
 #### Upload Proceeds
+
 Clicking "Continue upload →" starts the upload queue:
+
 - Skipped files are removed from the queue immediately (shown as "Skipped" in the queue list with a gray ✗)
 - Replace files upload and overwrite storage; existing DB record is updated in place (same `id`)
 - Keep both files upload as new records
 
 #### Edge Case: Replace Behavior on AI Data
+
 When replacing a photo:
-- The storage file and all `ai_*` fields are overwritten
+
+- The storage file and all `ai_`* fields are overwritten
 - `user_rating`, `user_notes`, and `user_flagged` are **preserved** — the user's curation work is not lost
 - Sub-collection memberships are **preserved** — the photo stays in whatever sub-collections it was in
 - AI analysis is re-triggered automatically after the new file is stored
@@ -572,6 +620,7 @@ In the sub-collection tab header, a **Share** button (link icon) opens the Share
 - **Regenerate**: creates a new token, invalidating the old URL — useful if the link was shared with the wrong person
 
 #### Share Link Behavior
+
 - The share token is a 12-character random alphanumeric string (e.g., `a8f3k9p2xk7m`), generated server-side with `crypto.randomBytes`
 - The public URL is: `https://[app-domain]/s/[share_token]`
 - No auth required to access `/s/[token]`
@@ -591,9 +640,11 @@ This is a read-only gallery page for external viewers:
 - If `share_enabled = false` (or token not found), show a tasteful 404: *"This gallery is no longer available."*
 
 #### Optional: Allow Downloads
+
 A toggle in the Share panel: **"Allow viewers to download photos"**. Stored as `share_allow_downloads boolean DEFAULT false` on `sub_collections`. When enabled, a download icon appears on each photo in the public view that fetches the original from storage.
 
 #### Security Notes
+
 - The `/s/[token]` route queries only `sub_collections` where `share_enabled = true` and `share_token = [token]` — no user ID needed
 - Supabase RLS policy: the `sub_collections` and related tables allow anonymous reads only when `share_enabled = true` and the query is filtered by `share_token`
 - Photo storage URLs are already public (Supabase public bucket), so no additional auth is needed for image display
@@ -602,16 +653,19 @@ A toggle in the Share panel: **"Allow viewers to download photos"**. Stored as `
 ---
 
 ### Keyboard Shortcuts
-| Key | Action |
-|-----|--------|
-| `←` / `→` | Previous / next photo (in single view) |
-| `ESC` | Back to grid |
-| `1`–`5` | Set user star rating |
-| `f` | Toggle flag |
-| `a` | Trigger AI analysis for current photo |
-| `b` | Generate / refresh Best Of collection |
+
+
+| Key                    | Action                                                      |
+| ---------------------- | ----------------------------------------------------------- |
+| `←` / `→`              | Previous / next photo (in single view)                      |
+| `ESC`                  | Back to grid                                                |
+| `1`–`5`                | Set user star rating                                        |
+| `f`                    | Toggle flag                                                 |
+| `a`                    | Trigger AI analysis for current photo                       |
+| `b`                    | Generate / refresh Best Of collection                       |
 | `Delete` / `Backspace` | Remove current photo from collection (prompts confirmation) |
-| `space` | Toggle select in multi-select mode |
+| `space`                | Toggle select in multi-select mode                          |
+
 
 ---
 
@@ -620,6 +674,7 @@ A toggle in the Share panel: **"Allow viewers to download photos"**. Stored as `
 Use Supabase Storage with a bucket named `photos`.
 
 Storage path structure:
+
 ```
 photos/{user_id}/{collection_id}/{photo_id}_{filename}
 ```
@@ -634,49 +689,74 @@ photos/{user_id}/{collection_id}/{photo_id}_{filename}
 ## API Routes / Server Actions
 
 ### `POST /api/collections/[id]/best-of` — Generate / regenerate Best Of sub-collection
-  - Accepts config body (weights, count, filters)
-  - Computes composite scores for all eligible photos
-  - Upserts the Best Of sub-collection and its photo membership
-  - Returns sub-collection with selected photos and their scores
+
+- Accepts config body (weights, count, filters)
+- Computes composite scores for all eligible photos
+- Upserts the Best Of sub-collection and its photo membership
+- Returns sub-collection with selected photos and their scores
+
 ### `POST /api/collections/[id]/check-duplicates` — Check filenames against existing photos
-  - Accepts `{ filenames: string[] }`
-  - Returns array of conflicts: `{ filename, existing_photo_id, thumbnail_url, uploaded_at, ai_overall_rating }`
+
+- Accepts `{ filenames: string[] }`
+- Returns array of conflicts: `{ filename, existing_photo_id, thumbnail_url, uploaded_at, ai_overall_rating }`
+
 ### `DELETE /api/collections/[id]/photos` — Bulk remove photos from collection
-  - Accepts `{ photo_ids: string[] }`
-  - Deletes photo records, storage files, thumbnails, and sub-collection memberships
-  - If any deleted photo was the collection cover, resets cover to next available photo
+
+- Accepts `{ photo_ids: string[] }`
+- Deletes photo records, storage files, thumbnails, and sub-collection memberships
+- If any deleted photo was the collection cover, resets cover to next available photo
+
 ### `POST /api/sub-collections/[id]/share` — Enable sharing and generate/return share token
-  - Generates `share_token` if not already set
-  - Sets `share_enabled = true`
-  - Returns `{ share_token, share_url }`
+
+- Generates `share_token` if not already set
+- Sets `share_enabled = true`
+- Returns `{ share_token, share_url }`
+
 ### `DELETE /api/sub-collections/[id]/share` — Disable share link
-  - Sets `share_enabled = false` (token preserved for potential re-enable)
+
+- Sets `share_enabled = false` (token preserved for potential re-enable)
+
 ### `POST /api/sub-collections/[id]/share/regenerate` — Regenerate share token
-  - Creates a new `share_token`, invalidating the previous URL
-  - Sets `share_enabled = true`
-  - Returns new `{ share_token, share_url }`
+
+- Creates a new `share_token`, invalidating the previous URL
+- Sets `share_enabled = true`
+- Returns new `{ share_token, share_url }`
+
 ### `GET /api/share/[token]` — Fetch public sub-collection data (no auth required)
-  - Returns sub-collection name, collection name, and photos with public fields only: `id`, `storage_url`, `ai_title`, `ai_caption`, `ai_tags`
-  - Explicitly excludes all rating fields (`ai_overall_rating`, `ai_tier`, `ai_*_rating`), critique fields (`ai_critique`, `ai_crop_suggestion`, `ai_bw_rationale`), and all user fields
-  - Returns 404 if `share_enabled = false` or token not found
+
+- Returns sub-collection name, collection name, and photos with public fields only: `id`, `storage_url`, `ai_title`, `ai_caption`, `ai_tags`
+- Explicitly excludes all rating fields (`ai_overall_rating`, `ai_tier`, `ai_*_rating`), critique fields (`ai_critique`, `ai_crop_suggestion`, `ai_bw_rationale`), and all user fields
+- Returns 404 if `share_enabled = false` or token not found
+
 ### `POST /api/collections` — Create collection
+
 ### `GET /api/collections` — List user's collections
+
 ### `POST /api/collections/[id]/photos` — Upload photo(s)
-  - Accepts multipart form data
-  - Uploads to Supabase Storage
-  - Creates photo record in DB
-  - Returns photo ID(s)
+
+- Accepts multipart form data
+- Uploads to Supabase Storage
+- Creates photo record in DB
+- Returns photo ID(s)
+
 ### `POST /api/photos/[id]/analyze` — Trigger AI analysis for one photo
-  - Fetches photo from storage
-  - Resizes to 1500px
-  - Calls Claude API with vision
-  - Stores results in DB
-  - Returns updated photo record
+
+- Fetches photo from storage
+- Resizes to 1500px
+- Calls Claude API with vision
+- Stores results in DB
+- Returns updated photo record
+
 ### `POST /api/collections/[id]/analyze-all` — Queue analysis for all unanalyzed photos
+
 ### `PATCH /api/photos/[id]` — Update user rating, notes, flag
+
 ### `POST /api/sub-collections` — Create sub-collection
+
 ### `POST /api/sub-collections/[id]/photos` — Add photos to sub-collection
+
 ### `DELETE /api/sub-collections/[id]/photos` — Remove photos from sub-collection
+
 ### `DELETE /api/photos/[id]` — Delete single photo (removes from storage + DB)
 
 ---
@@ -738,6 +818,7 @@ npm run dev
 ## Implementation Notes for Claude Code
 
 ### Project Structure
+
 ```
 /app
   /collections
@@ -783,6 +864,7 @@ npm run dev
 ```
 
 ### Key Implementation Priorities (build in this order)
+
 1. Supabase schema + migrations
 2. Auth (login/signup)
 3. Collections CRUD
@@ -801,6 +883,7 @@ npm run dev
 16. Thumbnail generation
 
 ### Dependencies to Install
+
 ```bash
 npm install @supabase/supabase-js @supabase/auth-helpers-nextjs
 npm install @anthropic-ai/sdk
@@ -813,7 +896,9 @@ npm install zustand                  # client state for multi-select, filters
 ```
 
 ### shadcn Components Needed
+
 Run `npx shadcn@latest add` for:
+
 - `button`, `card`, `badge`, `dialog`, `drawer`
 - `tabs`, `select`, `checkbox`, `textarea`, `input`
 - `progress`, `tooltip`, `popover`, `dropdown-menu`
@@ -824,6 +909,8 @@ Run `npx shadcn@latest add` for:
 
 ## Future Enhancements (out of scope for v1)
 
+- Relax criteria: focus on amateur photographer
+- Pick a photo as cover photo for a collection
 - Side-by-side comparison view (compare 2 photos)
 - Batch export (download selected photos as ZIP)
 - Share entire collection (not just sub-collection) as public gallery link
@@ -831,3 +918,8 @@ Run `npx shadcn@latest add` for:
 - Print order integration (e.g., Bay Photo, WHCC)
 - EXIF data display (focal length, ISO, shutter, aperture)
 - Map view showing photo locations from GPS EXIF data
+- Delete and rename collections
+- Bulk actions for analyze
+- Show user rating in grid view
+- Interactive chat with Claude about a photo
+

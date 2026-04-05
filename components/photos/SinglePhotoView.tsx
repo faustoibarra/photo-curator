@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Photo, SubCollection, SubCollectionPhoto } from '@/lib/types'
+import { BW_PROFILES, DEFAULT_BW_PROFILE } from '@/lib/bw-profiles'
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ interface SinglePhotoViewProps {
   currentIndex: number
   subCollections: SubCollection[]
   subCollectionPhotos: SubCollectionPhoto[]
+  forceBw?: boolean
   onClose: () => void
   onNext: () => void
   onPrev: () => void
@@ -120,6 +122,7 @@ export function SinglePhotoView({
   currentIndex,
   subCollections,
   subCollectionPhotos,
+  forceBw = false,
   onClose,
   onNext,
   onPrev,
@@ -132,10 +135,14 @@ export function SinglePhotoView({
   const [cropOpen, setCropOpen] = useState(false)
   const [bwOpen, setBwOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [bwEnabled, setBwEnabled] = useState(forceBw || photo.bw_profile != null)
+  const [activeProfile, setActiveProfile] = useState(photo.bw_profile ?? DEFAULT_BW_PROFILE)
+  const [savingBw, setSavingBw] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [savingRating, setSavingRating] = useState(false)
   const [savingFlag, setSavingFlag] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [notesValue, setNotesValue] = useState(photo.user_notes ?? '')
   const notesSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -143,10 +150,17 @@ export function SinglePhotoView({
   const hasNext = currentIndex < photos.length - 1
   const isAnalyzed = !!photo.ai_analyzed_at || photo.ai_overall_rating != null
 
-  // Sync notes field when photo ID changes
+  // Sync notes field and clear transient state when photo ID changes
   useEffect(() => {
     setNotesValue(photo.user_notes ?? '')
+    setAnalyzeError(null)
   }, [photo.id, photo.user_notes])
+
+  // Sync B&W state when photo changes
+  useEffect(() => {
+    setBwEnabled(forceBw || photo.bw_profile != null)
+    setActiveProfile(photo.bw_profile ?? DEFAULT_BW_PROFILE)
+  }, [photo.id, photo.bw_profile, forceBw])
 
   // Keyboard navigation
   useEffect(() => {
@@ -170,6 +184,9 @@ export function SinglePhotoView({
           break
         case 'a':
           handleAnalyze()
+          break
+        case 'b':
+          if (!forceBw) setBwEnabled((v) => !v)
           break
         case 'Delete':
         case 'Backspace':
@@ -230,6 +247,7 @@ export function SinglePhotoView({
   const handleAnalyze = useCallback(async () => {
     if (isAnalyzed || analyzing) return
     setAnalyzing(true)
+    setAnalyzeError(null)
     try {
       const res = await fetch(`/api/photos/${photo.id}`, {
         method: 'POST',
@@ -237,11 +255,35 @@ export function SinglePhotoView({
       if (res.ok) {
         const updated = await res.json()
         onPhotoUpdate(updated)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        if (data.billing) {
+          setAnalyzeError('Add credits at console.anthropic.com to continue analyzing.')
+        } else {
+          setAnalyzeError('Analysis failed. Please try again.')
+        }
       }
     } finally {
       setAnalyzing(false)
     }
   }, [photo.id, isAnalyzed, analyzing, onPhotoUpdate])
+
+  const handleBwSave = useCallback(
+    async (profileKey: string | null) => {
+      setSavingBw(true)
+      const res = await fetch(`/api/photos/${photo.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bw_profile: profileKey }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        onPhotoUpdate(updated)
+      }
+      setSavingBw(false)
+    },
+    [photo.id, onPhotoUpdate]
+  )
 
   const handleDeleteConfirm = async () => {
     setDeleting(true)
@@ -300,6 +342,7 @@ export function SinglePhotoView({
               sizes="(max-width: 1280px) 70vw, 900px"
               unoptimized
               priority
+              style={bwEnabled ? { filter: BW_PROFILES[activeProfile]?.cssFilter ?? BW_PROFILES[DEFAULT_BW_PROFILE].cssFilter } : undefined}
             />
           </div>
 
@@ -378,6 +421,11 @@ export function SinglePhotoView({
                   <>
                     <Loader2 className="size-6 text-muted-foreground animate-spin" />
                     <p className="text-sm text-muted-foreground">Analyzing…</p>
+                  </>
+                ) : analyzeError ? (
+                  <>
+                    <AlertCircle className="size-5 text-destructive" />
+                    <p className="text-xs text-destructive leading-relaxed">{analyzeError}</p>
                   </>
                 ) : (
                   <>
@@ -559,6 +607,69 @@ export function SinglePhotoView({
                 {savingFlag && <Loader2 className="size-3 animate-spin ml-0.5" />}
               </button>
             </div>
+          </section>
+
+          {/* B&W */}
+          <section className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Black & White</h3>
+              <div className="flex items-center gap-2">
+                {savingBw && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+                <button
+                  type="button"
+                  title={forceBw ? 'B&W locked by sub-collection' : 'Toggle B&W (b)'}
+                  disabled={forceBw}
+                  onClick={() => {
+                    const next = !bwEnabled
+                    setBwEnabled(next)
+                    if (!next) handleBwSave(null)
+                  }}
+                  className={cn(
+                    'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    bwEnabled ? 'bg-primary' : 'bg-input',
+                    forceBw ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'pointer-events-none inline-block size-4 rounded-full bg-background shadow-lg ring-0 transition-transform',
+                      bwEnabled ? 'translate-x-4' : 'translate-x-0'
+                    )}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {bwEnabled && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(BW_PROFILES).map(([key, profile]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        setActiveProfile(key)
+                        handleBwSave(key)
+                      }}
+                      className={cn(
+                        'text-xs px-2.5 py-1 rounded-full border transition-colors',
+                        activeProfile === key
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background border-input text-muted-foreground hover:text-foreground hover:bg-muted'
+                      )}
+                    >
+                      {profile.label}
+                    </button>
+                  ))}
+                </div>
+                {photo.bw_profile && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Saved: {BW_PROFILES[photo.bw_profile]?.label ?? photo.bw_profile}
+                    {photo.bw_profile !== activeProfile && ' · unsaved changes'}
+                  </p>
+                )}
+              </div>
+            )}
           </section>
 
           {/* Sub-collections */}

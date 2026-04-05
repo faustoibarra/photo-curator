@@ -20,6 +20,8 @@ interface PhotoGridProps {
   selectedIds: Set<string>
   analyzingIds?: Set<string>
   scoreMap?: Map<string, { score: number; score_breakdown: PhotoScore['score_breakdown'] }> | null
+  showBwScore?: boolean
+  forceBw?: boolean
   onPhotoClick: (id: string) => void
   onPhotoSelect: (id: string) => void
   onPhotoDelete?: (id: string) => Promise<boolean>
@@ -37,6 +39,8 @@ export function PhotoGrid({
   selectedIds,
   analyzingIds,
   scoreMap,
+  showBwScore = false,
+  forceBw = false,
   onPhotoClick,
   onPhotoSelect,
   onPhotoDelete,
@@ -153,6 +157,8 @@ export function PhotoGrid({
               isAnalyzing={analyzingIds?.has(photo.id) ?? false}
               compositeScore={scoreData?.score ?? null}
               scoreBreakdown={scoreData?.score_breakdown ?? null}
+              showBwScore={showBwScore}
+              forceBw={forceBw}
               onClick={() => {
                 if (multiSelect) {
                   onPhotoSelect(photo.id)

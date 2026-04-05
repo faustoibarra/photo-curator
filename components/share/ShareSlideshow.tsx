@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import type { Photo } from '@/lib/types'
+import { resolvePhotoUrl } from '@/lib/bw-profiles'
 
 interface ShareSlideshowProps {
   photos: Photo[]
   collectionName: string
   photographerName: string | null
+  forceBw?: boolean
   onComplete: () => void
 }
 
@@ -18,6 +20,7 @@ export default function ShareSlideshow({
   photos,
   collectionName,
   photographerName,
+  forceBw = false,
   onComplete,
 }: ShareSlideshowProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -43,17 +46,19 @@ export default function ShareSlideshow({
   }, [advance])
 
   const currentPhoto = photos[currentIndex]
+  const currentResolved = resolvePhotoUrl(currentPhoto, forceBw)
 
   return (
     <div className="fixed inset-0 z-50 bg-black overflow-hidden">
       {/* Current photo — always fully visible underneath */}
       <div className="absolute inset-0">
         <Image
-          src={currentPhoto.storage_url}
+          src={currentResolved.url}
           alt={currentPhoto.ai_title ?? currentPhoto.filename}
           fill
           className="object-cover"
           priority
+          style={currentResolved.cssFilter ? { filter: currentResolved.cssFilter } : undefined}
         />
       </div>
 
@@ -64,16 +69,21 @@ export default function ShareSlideshow({
           style={{
             opacity: 0,
             transition: `opacity ${TRANSITION_DURATION}ms ease-in-out`,
-            // Trigger the fade immediately on mount via animation
             animation: `fadeOut ${TRANSITION_DURATION}ms ease-in-out forwards`,
           }}
         >
-          <Image
-            src={photos[prevIndex].storage_url}
-            alt={photos[prevIndex].ai_title ?? photos[prevIndex].filename}
-            fill
-            className="object-cover"
-          />
+          {(() => {
+            const prevResolved = resolvePhotoUrl(photos[prevIndex], forceBw)
+            return (
+              <Image
+                src={prevResolved.url}
+                alt={photos[prevIndex].ai_title ?? photos[prevIndex].filename}
+                fill
+                className="object-cover"
+                style={prevResolved.cssFilter ? { filter: prevResolved.cssFilter } : undefined}
+              />
+            )
+          })()}
         </div>
       )}
 

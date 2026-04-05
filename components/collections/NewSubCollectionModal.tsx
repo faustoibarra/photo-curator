@@ -34,12 +34,14 @@ interface Props {
 export function NewSubCollectionModal({ open, onOpenChange, collectionId, onCreated }: Props) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(PRESET_COLORS[5])
+  const [isBw, setIsBw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function reset() {
     setName('')
     setColor(PRESET_COLORS[5])
+    setIsBw(false)
     setError(null)
   }
 
@@ -57,7 +59,7 @@ export function NewSubCollectionModal({ open, onOpenChange, collectionId, onCrea
       const res = await fetch('/api/sub-collections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collection_id: collectionId, name: name.trim(), color }),
+        body: JSON.stringify({ collection_id: collectionId, name: name.trim(), color, is_bw: isBw }),
       })
       if (!res.ok) {
         const data = await res.json()
@@ -142,6 +144,23 @@ export function NewSubCollectionModal({ open, onOpenChange, collectionId, onCrea
                 {name || 'Preview'}
               </span>
             </div>
+          </div>
+
+          {/* B&W collection toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Black & White collection</p>
+              <p className="text-xs text-muted-foreground">Display all photos in B&W</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsBw((v) => !v)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isBw ? 'bg-primary' : 'bg-input'}`}
+            >
+              <span
+                className={`pointer-events-none inline-block size-4 rounded-full bg-background shadow-lg ring-0 transition-transform ${isBw ? 'translate-x-4' : 'translate-x-0'}`}
+              />
+            </button>
           </div>
 
           <DialogFooter>

@@ -31,6 +31,7 @@ export default function ShareGallery({
           photos={featuredPhotos}
           collectionName={subCollection.name}
           photographerName={photographerName}
+          forceBw={subCollection.is_bw ?? false}
           onComplete={() => setPhase('grid')}
         />
       )}
@@ -40,6 +41,7 @@ export default function ShareGallery({
           subCollection={subCollection}
           photos={photos}
           photographerName={photographerName}
+          forceBw={subCollection.is_bw ?? false}
           onPhotoClick={(index) => setLightboxIndex(index)}
         />
       )}
@@ -49,6 +51,7 @@ export default function ShareGallery({
           photos={photos}
           initialIndex={lightboxIndex}
           allowDownloads={subCollection.share_allow_downloads ?? false}
+          forceBw={subCollection.is_bw ?? false}
           onClose={() => setLightboxIndex(null)}
         />
       )}

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import { analyzePhoto, CollectionType } from '@/lib/anthropic/analyze'
+import { BW_PROFILES, DEFAULT_BW_PROFILE } from '@/lib/bw-profiles'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,7 +106,8 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     console.error(`[Analysis] ✗ Photo ${photoId} failed after ${Date.now() - startTime}ms: ${message}`)
-    return Response.json({ error: message }, { status: 500 })
+    const isBilling = /credit balance|billing|quota|payment/i.test(message)
+    return Response.json({ error: message, billing: isBilling }, { status: 500 })
   }
 }
 
@@ -119,6 +121,12 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
   if (body.user_rating !== undefined) updates.user_rating = body.user_rating
   if (body.user_notes !== undefined) updates.user_notes = body.user_notes
   if (body.user_flagged !== undefined) updates.user_flagged = body.user_flagged
+  if (body.bw_profile !== undefined) {
+    updates.bw_profile = body.bw_profile
+    if (body.bw_profile === null) {
+      updates.bw_processed_url = null
+    }
+  }
 
   const { data, error } = await supabase
     .from('photos')
@@ -129,6 +137,55 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
     .single()
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  // Pre-generate B&W file when a profile is saved
+  if (body.bw_profile && data) {
+    try {
+      const serviceClient = createServiceClient()
+      const profileKey = body.bw_profile as string
+      const profile = BW_PROFILES[profileKey] ?? BW_PROFILES[DEFAULT_BW_PROFILE]
+
+      const { data: blob, error: dlErr } = await serviceClient.storage
+        .from('photos')
+        .download(data.storage_path)
+
+      if (!dlErr && blob) {
+        const buffer = Buffer.from(await blob.arrayBuffer())
+        const { r, g, b } = profile.sharp
+        const processed = await sharp(buffer)
+          .recomb([
+            [r, g, b],
+            [r, g, b],
+            [r, g, b],
+          ])
+          .jpeg({ quality: 88 })
+          .toBuffer()
+
+        const bwPath = `bw/${params.id}/${profileKey}.jpg`
+        await serviceClient.storage.from('photos').upload(bwPath, processed, {
+          contentType: 'image/jpeg',
+          upsert: true,
+        })
+
+        const { data: urlData } = serviceClient.storage.from('photos').getPublicUrl(bwPath)
+        const bwUrl = urlData.publicUrl
+
+        const { data: updated } = await supabase
+          .from('photos')
+          .update({ bw_processed_url: bwUrl })
+          .eq('id', params.id)
+          .eq('user_id', user.id)
+          .select()
+          .single()
+
+        if (data?.collection_id) revalidatePath(`/collections/${data.collection_id}`)
+        return Response.json(updated ?? data)
+      }
+    } catch (err) {
+      console.error('[BW] Pre-generation failed:', err)
+      // Return the already-saved row without bw_processed_url — not fatal
+    }
+  }
 
   // revalidate collection page so server data stays fresh on next load
   if (data?.collection_id) {

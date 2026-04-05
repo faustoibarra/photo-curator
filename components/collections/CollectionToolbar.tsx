@@ -73,6 +73,7 @@ const SORT_LABELS: Record<SortOption, string> = {
   upload_date: 'Upload date',
   ai_rating: 'AI rating',
   user_rating: 'Your rating',
+  bw_score: 'B&W score',
   filename: 'Filename',
 }
 

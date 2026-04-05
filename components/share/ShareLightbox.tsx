@@ -4,11 +4,13 @@ import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import type { Photo } from '@/lib/types'
+import { resolvePhotoUrl } from '@/lib/bw-profiles'
 
 interface ShareLightboxProps {
   photos: Photo[]
   initialIndex: number
   allowDownloads: boolean
+  forceBw?: boolean
   onClose: () => void
 }
 
@@ -16,10 +18,12 @@ export default function ShareLightbox({
   photos,
   initialIndex,
   allowDownloads,
+  forceBw = false,
   onClose,
 }: ShareLightboxProps) {
   const [index, setIndex] = useState(initialIndex)
   const photo = photos[index]
+  const resolved = resolvePhotoUrl(photo, forceBw)
 
   const prev = useCallback(() => setIndex((i) => Math.max(0, i - 1)), [])
   const next = useCallback(() => setIndex((i) => Math.min(photos.length - 1, i + 1)), [photos.length])
@@ -80,11 +84,12 @@ export default function ShareLightbox({
 
         <div className="relative flex-1 w-full flex items-center justify-center min-h-0">
           <Image
-            src={photo.storage_url}
+            src={resolved.url}
             alt={photo.ai_title ?? photo.filename}
             width={photo.width ?? 1200}
             height={photo.height ?? 800}
             className="max-h-[70vh] w-auto max-w-full object-contain rounded"
+            style={resolved.cssFilter ? { filter: resolved.cssFilter } : undefined}
           />
         </div>
 
@@ -98,7 +103,7 @@ export default function ShareLightbox({
       {/* Download */}
       {allowDownloads && (
         <a
-          href={photo.storage_url}
+          href={forceBw && photo.bw_processed_url ? photo.bw_processed_url : photo.storage_url}
           download={photo.filename}
           className="absolute bottom-6 right-6 text-white/40 hover:text-white transition-colors"
           onClick={(e) => e.stopPropagation()}

@@ -5,6 +5,7 @@ import { Loader2, Check, Star } from 'lucide-react'
 import type { Photo } from '@/lib/types'
 import type { PhotoScore } from './BestOfModal'
 import { cn } from '@/lib/utils'
+import { resolvePhotoUrl } from '@/lib/bw-profiles'
 
 interface PhotoCardProps {
   photo: Photo
@@ -13,6 +14,8 @@ interface PhotoCardProps {
   isAnalyzing?: boolean
   compositeScore?: number | null
   scoreBreakdown?: PhotoScore['score_breakdown'] | null
+  showBwScore?: boolean
+  forceBw?: boolean
   onClick?: () => void
   onCheckboxChange?: () => void
   onContextMenu?: (e: React.MouseEvent, photoId: string) => void
@@ -49,12 +52,15 @@ export function PhotoCard({
   isAnalyzing = false,
   compositeScore = null,
   scoreBreakdown = null,
+  showBwScore = false,
+  forceBw = false,
   onClick,
   onCheckboxChange,
   onContextMenu,
 }: PhotoCardProps) {
   const tier = photo.ai_tier
   const isBestOf = compositeScore != null
+  const bwResolved = resolvePhotoUrl(photo, forceBw)
 
   return (
     <div className="relative group">
@@ -69,13 +75,14 @@ export function PhotoCard({
       >
         {/* Thumbnail — lazy-loaded by default via next/image */}
         <Image
-          src={thumbUrl(photo)}
+          src={forceBw && bwResolved.url !== photo.storage_url ? bwResolved.url : thumbUrl(photo)}
           alt={photo.filename}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
           className="object-cover transition-transform duration-200 group-hover:scale-105"
           loading="lazy"
           unoptimized
+          style={bwResolved.cssFilter ? { filter: bwResolved.cssFilter } : undefined}
         />
 
         {/* Hover overlay */}
@@ -130,6 +137,13 @@ export function PhotoCard({
           </div>
         )}
       </button>
+
+      {/* B&W score label (shown when sorting by B&W score) */}
+      {showBwScore && photo.ai_bw_rating != null && (
+        <p className="text-center text-[10px] text-muted-foreground mt-1 tabular-nums">
+          B&W {Number(photo.ai_bw_rating).toFixed(1)}
+        </p>
+      )}
 
       {/* Multi-select checkbox */}
       {multiSelect && (
