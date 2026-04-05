@@ -256,24 +256,28 @@ export function ShareSettingsModal({
           </div>
 
           {/* Share link */}
-          {shareEnabled && shareUrl && (
+          {shareEnabled && (
             <div>
               <p className="text-sm font-medium mb-1.5">Share link</p>
-              <div className="flex gap-2">
-                <input
-                  readOnly
-                  value={shareUrl}
-                  className="flex-1 text-xs border border-input rounded px-2.5 py-2 bg-muted text-muted-foreground"
-                />
-                <button
-                  type="button"
-                  onClick={copyLink}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded border border-input bg-background hover:bg-muted transition-colors"
-                >
-                  {copied ? <Check className="size-3.5 text-green-600" /> : <Link className="size-3.5" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              </div>
+              {shareUrl ? (
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    value={shareUrl}
+                    className="flex-1 text-xs border border-input rounded px-2.5 py-2 bg-muted text-muted-foreground"
+                  />
+                  <button
+                    type="button"
+                    onClick={copyLink}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded border border-input bg-background hover:bg-muted transition-colors"
+                  >
+                    {copied ? <Check className="size-3.5 text-green-600" /> : <Link className="size-3.5" />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Save to generate your share link.</p>
+              )}
             </div>
           )}
 
