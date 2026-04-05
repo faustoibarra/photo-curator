@@ -33,6 +33,107 @@ const ACCEPTED = {
   'image/webp': ['.webp'],
 }
 
+async function generateThumbnail(
+  file: File
+): Promise<{ blob: Blob | null; width: number | null; height: number | null }> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const { naturalWidth: w, naturalHeight: h } = img
+      const scale = Math.min(1, 400 / w)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(w * scale)
+      canvas.height = Math.round(h * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        resolve({ blob: null, width: w, height: h })
+        return
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => resolve({ blob, width: w, height: h }),
+        'image/jpeg',
+        0.85
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve({ blob: null, width: null, height: null })
+    }
+    img.src = url
+  })
+}
+
+async function uploadOne(
+  entry: QueueEntry,
+  collectionId: string
+): Promise<{ error?: string }> {
+  // Step 1: get signed upload URLs from the server
+  const urlRes = await fetch(`/api/collections/${collectionId}/photos/upload-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: entry.file.name,
+      contentType: entry.file.type,
+      resolution: entry.resolution ?? 'new',
+      existingPhotoId: entry.existingPhotoId ?? null,
+    }),
+  })
+  if (!urlRes.ok) {
+    const data = await urlRes.json().catch(() => ({}))
+    return { error: data.error ?? 'Failed to prepare upload' }
+  }
+  const { photoId, filename, storagePath, thumbPath, publicUrl, originalUploadUrl, thumbUploadUrl } =
+    await urlRes.json()
+
+  // Step 2: generate thumbnail + capture dimensions client-side
+  const { blob: thumbBlob, width, height } = await generateThumbnail(entry.file)
+
+  // Step 3: upload original directly to Supabase Storage (bypasses Vercel size limit)
+  const origRes = await fetch(originalUploadUrl, {
+    method: 'PUT',
+    body: entry.file,
+    headers: { 'Content-Type': entry.file.type },
+  })
+  if (!origRes.ok) {
+    return { error: 'Storage upload failed' }
+  }
+
+  // Step 4: upload thumbnail (best-effort — skip if canvas couldn't decode the file)
+  if (thumbBlob) {
+    await fetch(thumbUploadUrl, {
+      method: 'PUT',
+      body: thumbBlob,
+      headers: { 'Content-Type': 'image/jpeg' },
+    }).catch(() => {/* thumbnail is non-critical */})
+  }
+
+  // Step 5: create the DB record
+  const finalizeRes = await fetch(`/api/collections/${collectionId}/photos/finalize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      photoId,
+      filename,
+      storagePath,
+      thumbPath,
+      publicUrl,
+      width,
+      height,
+      fileSize: entry.file.size,
+      resolution: entry.resolution ?? 'new',
+      existingPhotoId: entry.existingPhotoId ?? null,
+    }),
+  })
+  if (!finalizeRes.ok) {
+    const data = await finalizeRes.json().catch(() => ({}))
+    return { error: data.error ?? 'Failed to save photo' }
+  }
+  return {}
+}
+
 export function UploadZone({ collectionId }: UploadZoneProps) {
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [duplicates, setDuplicates] = useState<DuplicateConflict[]>([])
@@ -117,7 +218,6 @@ export function UploadZone({ collectionId }: UploadZoneProps) {
       const entry = queue[i]
       if (entry.status === 'done' || entry.status === 'skipped') continue
 
-      // Handle skipped resolutions
       if (entry.resolution === 'skip') {
         updateEntry(i, { status: 'skipped' })
         continue
@@ -126,21 +226,9 @@ export function UploadZone({ collectionId }: UploadZoneProps) {
       updateEntry(i, { status: 'uploading' })
 
       try {
-        const form = new FormData()
-        form.append('file', entry.file)
-        form.append('resolution', entry.resolution ?? 'new')
-        if (entry.existingPhotoId) {
-          form.append('existing_photo_id', entry.existingPhotoId)
-        }
-
-        const res = await fetch(`/api/collections/${collectionId}/photos`, {
-          method: 'POST',
-          body: form,
-        })
-
-        if (!res.ok) {
-          const { error } = await res.json()
-          updateEntry(i, { status: 'error', error: error ?? 'Upload failed' })
+        const { error } = await uploadOne(entry, collectionId)
+        if (error) {
+          updateEntry(i, { status: 'error', error })
         } else {
           updateEntry(i, { status: 'done' })
         }
