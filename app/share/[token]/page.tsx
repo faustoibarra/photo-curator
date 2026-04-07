@@ -36,17 +36,17 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
   const featuredIds: string[] = subCollection.featured_photo_ids ?? []
   const ogPhotoId = featuredIds[0] ?? null
 
-  let ogImageUrl: string | undefined
+  let rawOgImageUrl: string | undefined
   if (ogPhotoId) {
     const { data: featuredPhoto } = await supabase
       .from('photos')
       .select('storage_url')
       .eq('id', ogPhotoId)
       .single()
-    ogImageUrl = featuredPhoto?.storage_url ?? undefined
+    rawOgImageUrl = featuredPhoto?.storage_url ?? undefined
   }
 
-  if (!ogImageUrl) {
+  if (!rawOgImageUrl) {
     const { data: firstRow } = await supabase
       .from('sub_collection_photos')
       .select('photos(storage_url)')
@@ -54,8 +54,17 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
       .limit(1)
       .single()
     const row = firstRow as { photos: { storage_url: string | null } | null } | null
-    ogImageUrl = row?.photos?.storage_url ?? undefined
+    rawOgImageUrl = row?.photos?.storage_url ?? undefined
   }
+
+  // Route the raw storage URL through Next.js image optimization so WhatsApp
+  // and other crawlers receive a compressed, web-sized image instead of the
+  // original full-resolution file (which can be 10-30 MB and gets silently
+  // dropped by crawlers with a ~300 KB limit).
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const ogImageUrl = rawOgImageUrl
+    ? `${appUrl}/_next/image?url=${encodeURIComponent(rawOgImageUrl)}&w=1200&q=80`
+    : undefined
 
   const description = subCollection.description ??
     `A curated photo collection${photographerName ? ` by ${photographerName}` : ''}.`
@@ -66,7 +75,7 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
     openGraph: {
       title,
       description,
-      ...(ogImageUrl ? { images: [{ url: ogImageUrl, width: 1200, height: 800 }] } : {}),
+      ...(ogImageUrl ? { images: [{ url: ogImageUrl, width: 1200, height: 630 }] } : {}),
       type: 'website',
     },
     twitter: {
