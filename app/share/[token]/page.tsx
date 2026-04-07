@@ -1,11 +1,81 @@
 import { unstable_noStore as noStore } from 'next/cache'
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import { createServiceClient } from '@/lib/supabase/service'
 import ShareGallery from '@/components/share/ShareGallery'
 import type { Photo, SubCollection } from '@/lib/types'
 
 interface SharePageProps {
   params: { token: string }
+}
+
+export async function generateMetadata({ params }: SharePageProps): Promise<Metadata> {
+  const supabase = createServiceClient()
+
+  const { data: subCollection } = await supabase
+    .from('sub_collections')
+    .select('*')
+    .eq('share_token', params.token)
+    .eq('share_enabled', true)
+    .single()
+
+  if (!subCollection) return { title: 'PhotoCurator' }
+
+  const { data: photographerData } = await supabase.auth.admin.getUserById(subCollection.user_id)
+  const photographer = photographerData?.user
+  const photographerName =
+    photographer?.user_metadata?.full_name ??
+    photographer?.user_metadata?.name ??
+    'Fausto Ibarra'
+
+  const title = photographerName
+    ? `${subCollection.name} — by ${photographerName}`
+    : subCollection.name
+
+  // Pick OG image: first featured photo id, else first photo in sub-collection
+  const featuredIds: string[] = subCollection.featured_photo_ids ?? []
+  const ogPhotoId = featuredIds[0] ?? null
+
+  let ogImageUrl: string | undefined
+  if (ogPhotoId) {
+    const { data: featuredPhoto } = await supabase
+      .from('photos')
+      .select('storage_url')
+      .eq('id', ogPhotoId)
+      .single()
+    ogImageUrl = featuredPhoto?.storage_url ?? undefined
+  }
+
+  if (!ogImageUrl) {
+    const { data: firstRow } = await supabase
+      .from('sub_collection_photos')
+      .select('photos(storage_url)')
+      .eq('sub_collection_id', subCollection.id)
+      .limit(1)
+      .single()
+    const row = firstRow as { photos: { storage_url: string | null } | null } | null
+    ogImageUrl = row?.photos?.storage_url ?? undefined
+  }
+
+  const description = subCollection.description ??
+    `A curated photo collection${photographerName ? ` by ${photographerName}` : ''}.`
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      ...(ogImageUrl ? { images: [{ url: ogImageUrl, width: 1200, height: 800 }] } : {}),
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      ...(ogImageUrl ? { images: [ogImageUrl] } : {}),
+    },
+  }
 }
 
 export default async function SharePage({ params }: SharePageProps) {
@@ -30,11 +100,6 @@ export default async function SharePage({ params }: SharePageProps) {
     .select('photo_id, photos(*)')
     .eq('sub_collection_id', subCollection.id)
 
-  // Fetch photographer display name from auth
-  const { data: { user: photographer } } = await supabase.auth.admin.getUserById(
-    subCollection.user_id
-  )
-
   const allPhotos: Photo[] = (photos ?? [])
     .map((row: { photo_id: string; photos: Photo | null }) => row.photos)
     .filter((p): p is Photo => p !== null)
@@ -49,12 +114,7 @@ export default async function SharePage({ params }: SharePageProps) {
       subCollection={subCollection as SubCollection}
       photos={allPhotos}
       featuredPhotos={featuredPhotos}
-      photographerName={
-        photographer?.user_metadata?.full_name ??
-        photographer?.user_metadata?.name ??
-        photographer?.email?.split('@')[0] ??
-        null
-      }
+      photographerName="Fausto Ibarra"
     />
   )
 }

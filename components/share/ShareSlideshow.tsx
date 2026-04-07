@@ -49,7 +49,7 @@ export default function ShareSlideshow({
   const currentResolved = resolvePhotoUrl(currentPhoto, forceBw)
 
   return (
-    <div className="fixed inset-0 z-50 bg-black overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-zinc-950 overflow-hidden">
       {/* Current photo — always fully visible underneath */}
       <div className="absolute inset-0">
         <Image
@@ -95,7 +95,7 @@ export default function ShareSlideshow({
         className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none transition-opacity duration-1000"
         style={{ opacity: currentIndex === 0 ? 1 : 0 }}
       >
-        <h1 className="text-4xl md:text-6xl font-light tracking-widest text-white text-center px-8 drop-shadow-2xl">
+        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-light tracking-widest text-white text-center px-8 drop-shadow-2xl">
           {collectionName}
         </h1>
       </div>

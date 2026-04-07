@@ -25,7 +25,7 @@ export default function ShareGallery({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-zinc-950 text-white">
       {phase === 'slideshow' && featuredPhotos.length > 0 && (
         <ShareSlideshow
           photos={featuredPhotos}
