@@ -92,13 +92,27 @@ async function uploadOne(
   const { blob: thumbBlob, width, height } = await generateThumbnail(entry.file)
 
   // Step 3: upload original directly to Supabase Storage (bypasses Vercel size limit)
-  const origRes = await fetch(originalUploadUrl, {
-    method: 'PUT',
-    body: entry.file,
-    headers: { 'Content-Type': entry.file.type },
-  })
+  let origRes: Response
+  try {
+    origRes = await fetch(originalUploadUrl, {
+      method: 'PUT',
+      body: entry.file,
+      headers: { 'Content-Type': entry.file.type },
+    })
+  } catch (fetchErr) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+    return { error: `Upload failed — network error: ${msg}` }
+  }
   if (!origRes.ok) {
-    return { error: 'Storage upload failed' }
+    if (origRes.status === 413) {
+      return { error: 'File too large — increase the photos bucket file_size_limit in your Supabase dashboard.' }
+    }
+    let detail = origRes.statusText
+    try {
+      const body = await origRes.json()
+      detail = body.error ?? body.message ?? detail
+    } catch { /* ignore */ }
+    return { error: `Upload failed (${origRes.status}): ${detail}` }
   }
 
   // Step 4: upload thumbnail (best-effort — skip if canvas couldn't decode the file)
