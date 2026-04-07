@@ -81,7 +81,7 @@ export default function ShareLightbox({
       role="dialog"
       aria-modal="true"
       aria-label="Photo viewer"
-      className="fixed inset-0 z-50 bg-zinc-950/97 flex flex-col items-center justify-center"
+      className="fixed inset-0 z-50 bg-zinc-950 flex flex-col items-center justify-center"
       onClick={onClose}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
