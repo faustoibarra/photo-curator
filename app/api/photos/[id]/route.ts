@@ -59,6 +59,11 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
     const imageBuffer = Buffer.from(await blob.arrayBuffer())
     console.log(`[Analysis] 📥 Downloaded ${imageBuffer.byteLength} bytes`)
 
+    // Capture original dimensions before resize (needed by PS script route)
+    const originalMeta = await sharp(imageBuffer).metadata()
+    const originalWidth = originalMeta.width ?? null
+    const originalHeight = originalMeta.height ?? null
+
     console.log(`[Analysis] 📐 Resizing photo ${photoId}`)
     const resized = await sharp(imageBuffer)
       .resize(1500, 1500, { fit: 'inside', withoutEnlargement: true })
@@ -88,9 +93,13 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
         ai_tier: analysis.tier,
         ai_critique: analysis.critique,
         ai_crop_suggestion: analysis.crop_suggestion,
+        ai_crop_coords: analysis.crop_suggestion_coords,
+        ai_edit_adjustments: analysis.edit_adjustments,
         ai_bw_rationale: analysis.bw_rationale,
         ai_tags: analysis.tags,
         ai_analyzed_at: new Date().toISOString(),
+        original_width: originalWidth,
+        original_height: originalHeight,
       })
       .eq('id', photoId)
       .eq('user_id', user.id)
@@ -121,6 +130,7 @@ export async function PATCH(req: NextRequest, { params }: RouteContext) {
   if (body.user_rating !== undefined) updates.user_rating = body.user_rating
   if (body.user_notes !== undefined) updates.user_notes = body.user_notes
   if (body.user_flagged !== undefined) updates.user_flagged = body.user_flagged
+  if (body.user_crop_coords !== undefined) updates.user_crop_coords = body.user_crop_coords
   if (body.bw_profile !== undefined) {
     updates.bw_profile = body.bw_profile
     if (body.bw_profile === null) {

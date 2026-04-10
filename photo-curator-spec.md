@@ -77,14 +77,19 @@ ai_print_rating     numeric(3,1)
 ai_bw_rating        numeric(3,1)   -- suitability for B&W conversion
 ai_tier             text           -- 'A' | 'B' | 'C'
 ai_critique         text           -- full critique text
-ai_crop_suggestion  text           -- crop/edit recommendations
+ai_crop_suggestion  text           -- crop/edit recommendations (prose)
+ai_crop_coords      jsonb          -- structured crop: {x, y, width, height} as floats 0-1
+ai_edit_adjustments jsonb          -- structured tone: {exposure, shadows, highlights, contrast, saturation, temperature, sharpening}
 ai_bw_rationale     text           -- why it would/wouldn't work in B&W
 ai_tags             text[]         -- auto-generated tags
 ai_analyzed_at      timestamptz
+original_width      integer        -- pixel dimensions captured at analysis time (for PS script)
+original_height     integer
 -- User fields
 user_rating         integer        -- 1 to 5 stars
 user_notes          text
 user_flagged        boolean DEFAULT false
+user_crop_coords    jsonb          -- user-accepted/adjusted crop; null = not saved yet
 uploaded_at         timestamptz DEFAULT now()
 sort_order          integer DEFAULT 0
 ```
@@ -146,9 +151,28 @@ Return a JSON object with the following fields:
   "tier": "<A|B|C>",
   "critique": "A detailed critique covering: technical quality (sharpness, exposure, noise), composition (leading lines, foreground interest, layering), light quality and direction, subject strength, emotional impact, and print potential. Be direct and specific. 150-250 words.",
   "crop_suggestion": "Specific crop or edit recommendations to strengthen the image. If no changes needed, say so. 50-100 words.",
+  "crop_suggestion_coords": {
+    "x": <float 0-1, left edge of crop as proportion of original width>,
+    "y": <float 0-1, top edge of crop as proportion of original height>,
+    "width": <float 0-1, crop width as proportion of original width>,
+    "height": <float 0-1, crop height as proportion of original height>
+  },
+  "edit_adjustments": {
+    "exposure": <float, stops e.g. +0.5 or -1.0, null if no change recommended>,
+    "shadows": <integer -100 to +100 Photoshop-style, null if no change>,
+    "highlights": <integer -100 to +100, null if no change>,
+    "contrast": <integer -100 to +100, null if no change>,
+    "saturation": <integer -100 to +100, null if no change>,
+    "temperature": <integer -100 to +100 shift (negative = cooler), null if no change>,
+    "sharpening": <integer 0 to 150, null if no change>
+  },
   "bw_rationale": "Why this image would or would not work well as a B&W conversion. Reference specific tonal relationships, textures, or compositional elements. 50-75 words.",
   "tags": ["tag1", "tag2", ...]
 }
+
+Note: `crop_suggestion_coords` enables in-app crop preview and Photoshop script export.
+`edit_adjustments` enables the Photoshop script to apply tone corrections automatically.
+Both fields should always be present (set values to null if no adjustment is recommended).
 
 Tier definitions:
 - A: Wall-print worthy. Technically excellent, compositionally strong, distinctive light or subject. Would stand alone in a fine art gallery.
@@ -424,7 +448,7 @@ This is the primary working view. It has two main modes:
     - Overall rating (large, prominent) + tier badge
     - Rating breakdown: Technical / Composition / Light / Impact / Print / B&W (shown as mini bars or scores)
     - Full critique text (expandable)
-    - Crop suggestion
+    - Crop preview panel (see Photo Edit Preview Feature section) — replaces the plain crop suggestion text
     - B&W rationale
     - Tags
   - User Input card:
@@ -742,14 +766,23 @@ photos/{user_id}/{collection_id}/{photo_id}_{filename}
 ### `POST /api/photos/[id]/analyze` — Trigger AI analysis for one photo
 
 - Fetches photo from storage
+- Captures original pixel dimensions via Sharp metadata (stored as `original_width`/`original_height`)
 - Resizes to 1500px
 - Calls Claude API with vision
-- Stores results in DB
+- Stores results in DB including `ai_crop_coords` and `ai_edit_adjustments`
 - Returns updated photo record
+
+### `GET /api/photos/[id]/ps-script` — Download Photoshop ExtendScript
+
+- Auth check + fetch photo
+- Uses `user_crop_coords ?? ai_crop_coords` for crop bounds
+- Uses `original_width`/`original_height` to convert proportional coords to pixels
+- Generates `.jsx` ExtendScript that crops and applies tone adjustments in Photoshop
+- Returns as `Content-Disposition: attachment; filename="crop-{title}.jsx"`
 
 ### `POST /api/collections/[id]/analyze-all` — Queue analysis for all unanalyzed photos
 
-### `PATCH /api/photos/[id]` — Update user rating, notes, flag
+### `PATCH /api/photos/[id]` — Update user rating, notes, flag, user_crop_coords
 
 ### `POST /api/sub-collections` — Create sub-collection
 
@@ -840,6 +873,7 @@ npm run dev
     PhotoCard.tsx
     SinglePhotoView.tsx
     AnalysisPanel.tsx
+    CropPreviewPanel.tsx          -- in-app crop preview + PS script download
     UploadZone.tsx
     DuplicateResolutionModal.tsx  -- conflict resolution before upload
     BestOfModal.tsx               -- configuration modal for Best Of generation
@@ -893,6 +927,7 @@ npm install @radix-ui/react-*        # via shadcn
 npm install lucide-react
 npm install tailwind-merge clsx
 npm install zustand                  # client state for multi-select, filters
+npm install react-cropper            # Cropper.js React wrapper for crop preview
 ```
 
 ### shadcn Components Needed
@@ -904,6 +939,126 @@ Run `npx shadcn@latest add` for:
 - `progress`, `tooltip`, `popover`, `dropdown-menu`
 - `sheet` (for analysis side panel on desktop)
 - `skeleton` (loading states)
+
+---
+
+## Photo Edit Preview Feature
+
+### Overview
+
+The AI crop and tone recommendations are currently text-only. This feature makes them visual and actionable:
+
+1. **In-app crop preview** — the AI's suggested crop is applied immediately when you open a photo. Uses react-cropper (Cropper.js). Prescription-first: the crop is shown applied on open, not as an option to explore.
+2. **Photoshop script export** — download a `.jsx` ExtendScript file that applies the crop AND tone adjustments in Photoshop automatically. No plugin required — run via File → Scripts → Browse (PS CS6+).
+
+The design principle: show the AI's verdict *before* the user opens Photoshop. This is a decision layer, not an editor.
+
+### New DB Columns
+
+Added to `photos` (see schema section):
+- `ai_crop_coords` — JSONB, Claude-generated proportional crop `{x, y, width, height}` (floats 0–1)
+- `ai_edit_adjustments` — JSONB, Claude-generated tone adjustments `{exposure, shadows, highlights, contrast, saturation, temperature, sharpening}`
+- `user_crop_coords` — JSONB, user-accepted or adjusted crop (null = not saved)
+- `original_width`, `original_height` — integer pixel dimensions captured from Sharp metadata at analysis time; needed by the PS script route
+
+### Updated AI Prompt
+
+`lib/anthropic/analyze.ts` — two new fields added to the JSON schema:
+
+- `crop_suggestion_coords` — machine-readable crop, same content as the prose `crop_suggestion` but structured
+- `edit_adjustments` — machine-readable tone values for Photoshop
+
+`AnalysisResult` interface includes `crop_suggestion_coords` and `edit_adjustments` as typed fields.
+
+### DB Migration
+
+`supabase/migrations/[timestamp]_add_crop_preview_fields.sql`:
+
+```sql
+alter table photos
+  add column ai_crop_coords jsonb default null,
+  add column ai_edit_adjustments jsonb default null,
+  add column user_crop_coords jsonb default null,
+  add column original_width integer default null,
+  add column original_height integer default null;
+```
+
+### `CropPreviewPanel` Component
+
+`components/photos/CropPreviewPanel.tsx` — client component replacing the plain crop text in SinglePhotoView.
+
+**Backward compatibility:** if `ai_crop_coords` is null (photo analyzed before this feature), shows prose `ai_crop_suggestion` text with a "Re-analyze to enable visual preview" note.
+
+**When coords are present:**
+
+- Default state: Cropper.js with `viewMode=2` (restricts box to canvas) and `dragMode='none'` (preview-only, no user repositioning). The crop is shown applied immediately. Rule-of-thirds grid overlay visible.
+- "Cropped / Original" toggle below the photo.
+- Sidebar: prose crop suggestion, "Unlock to adjust" button, "Download Photoshop Script" button.
+- Adjust mode (after "Unlock to adjust"): `dragMode='crop'` — user can drag and resize handles. Coordinate readout shown (x%, y%, w%, h%). Sidebar shows "Save this crop" and "Reset to AI crop."
+
+The "Download Photoshop Script" button lives inside `CropPreviewPanel` only — not duplicated in `SinglePhotoView`.
+
+**Props:**
+```typescript
+photo: Photo
+onCropAccepted: (coords: CropCoords) => void
+```
+
+**SSR:** `react-cropper` is browser-only. Load with:
+```typescript
+const Cropper = dynamic(() => import('react-cropper'), { ssr: false })
+```
+
+### Photoshop Script API Route
+
+`app/api/photos/[id]/ps-script/route.ts` — GET endpoint.
+
+1. Auth check + fetch photo
+2. Effective crop = `user_crop_coords ?? ai_crop_coords`
+3. Read `original_width`, `original_height` (stored at analysis time, no re-download)
+4. Generate `.jsx` ExtendScript:
+   - Convert proportional coords to pixel bounds using stored dimensions
+   - Apply crop via `doc.crop(bounds)`
+   - Apply tone adjustments via Photoshop adjustment layers (Brightness/Contrast, Hue/Saturation, Curves for exposure)
+   - Save via `doc.saveAs(new File(doc.path + "/cropped_" + doc.name))` — **SaveAs, not save**, to preserve the original
+5. Return as `Content-Disposition: attachment; filename="crop-{title}.jsx"`
+
+**Photoshop ExtendScript tone mapping:**
+- `exposure` → Curves adjustment layer (shadows/midtones/highlights anchor points)
+- `shadows` / `highlights` → Curves adjustment layer or Brightness/Contrast
+- `contrast` → Brightness/Contrast adjustment layer
+- `saturation` → Hue/Saturation adjustment layer
+- `temperature` → Photo Filter adjustment layer (warm/cool)
+- `sharpening` → Unsharp Mask via `doc.activeLayer.applyUnSharpMask(amount, radius, threshold)`
+
+### Updated `app/api/photos/[id]/route.ts`
+
+**POST (analyze) handler additions:**
+- After Sharp resize, call `sharpInstance.metadata()` to get original dimensions; write `original_width` and `original_height` to DB
+- Save `ai_crop_coords` and `ai_edit_adjustments` from `AnalysisResult`
+
+**PATCH handler additions:**
+- Accept `user_crop_coords` in the allowed update fields
+
+### Integration in `SinglePhotoView`
+
+Replace the existing "Crop / edit" collapsible section (which showed plain `ai_crop_suggestion` text) with `<CropPreviewPanel photo={photo} onCropAccepted={handleCropAccepted} />`.
+
+`handleCropAccepted` calls `PATCH /api/photos/[id]` with `{ user_crop_coords: coords }` and refreshes the router.
+
+### Dependencies
+
+```bash
+npm install react-cropper
+```
+
+### Backward Compatibility
+
+Old photos (analyzed before this migration) have `ai_crop_coords = null`. `CropPreviewPanel` detects this and renders prose-only fallback. Re-analyzing an old photo via the existing "Analyze" button populates the new fields automatically.
+
+### V2 (not in scope): Multiple Crop Candidates
+
+Multiple ranked crop options (rule of thirds, subject isolation, print aspect ratios) shown as a thumbnail strip. One-click re-analysis per candidate. The DB schema is already compatible — `ai_crop_coords` could become an array.
 
 ---
 

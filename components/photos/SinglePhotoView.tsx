@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Photo, SubCollection, SubCollectionPhoto } from '@/lib/types'
+import CropPreviewPanel from '@/components/photos/CropPreviewPanel'
+import type { CropCoords } from '@/components/photos/CropPreviewPanel'
 import { BW_PROFILES, DEFAULT_BW_PROFILE } from '@/lib/bw-profiles'
 import {
   Dialog,
@@ -491,8 +493,8 @@ export function SinglePhotoView({
                   </div>
                 )}
 
-                {/* Crop suggestion */}
-                {photo.ai_crop_suggestion && (
+                {/* Crop preview — shows visual crop when ai_crop_coords present, prose fallback otherwise */}
+                {(photo.ai_crop_suggestion || (photo as Photo & { ai_crop_coords?: CropCoords | null }).ai_crop_coords) && (
                   <div>
                     <button
                       type="button"
@@ -507,9 +509,9 @@ export function SinglePhotoView({
                       )}
                     </button>
                     {cropOpen && (
-                      <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                        {photo.ai_crop_suggestion}
-                      </p>
+                      <div className="mt-2">
+                        <CropPreviewPanel photo={photo as Photo & { ai_crop_coords?: CropCoords | null; user_crop_coords?: CropCoords | null; original_width?: number | null; original_height?: number | null }} />
+                      </div>
                     )}
                   </div>
                 )}
