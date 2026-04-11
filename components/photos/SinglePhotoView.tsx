@@ -247,7 +247,7 @@ export function SinglePhotoView({
   }, [photo.id, photo.user_notes, notesValue, onPhotoUpdate])
 
   const handleAnalyze = useCallback(async () => {
-    if (isAnalyzed || analyzing) return
+    if (analyzing) return
     setAnalyzing(true)
     setAnalyzeError(null)
     try {
@@ -268,7 +268,7 @@ export function SinglePhotoView({
     } finally {
       setAnalyzing(false)
     }
-  }, [photo.id, isAnalyzed, analyzing, onPhotoUpdate])
+  }, [photo.id, analyzing, onPhotoUpdate])
 
   const handleBwSave = useCallback(
     async (profileKey: string | null) => {
@@ -401,6 +401,17 @@ export function SinglePhotoView({
                   >
                     <Sparkles className="size-3" />
                     Analyze
+                  </button>
+                )}
+                {isAnalyzed && !analyzing && (
+                  <button
+                    type="button"
+                    onClick={handleAnalyze}
+                    title="Re-analyze (a)"
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-input bg-background hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                  >
+                    <Sparkles className="size-3" />
+                    Re-analyze
                   </button>
                 )}
                 {isAnalyzed && photo.ai_tier && (
