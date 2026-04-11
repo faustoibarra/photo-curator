@@ -127,33 +127,34 @@ Use `claude-sonnet-4-5` with vision (base64 image input). Resize images to max 1
 
 ### Analysis Prompt
 
-Send each photo with a structured prompt requesting JSON output. The system prompt should define the persona of an experienced landscape/travel/sports photographer and photo editor. The user prompt should request:
+Send each photo with a structured prompt requesting JSON output.
+
+**System prompt:** Define the persona as a senior photo editor at a serious publication and gallery curator with an unsparing eye, who grades against the published standard of the genre — not against the batch being analyzed.
+
+**User prompt:**
 
 ```
-Analyze this photograph as an expert landscape photographer and photo editor. 
+Analyze this photograph as an expert landscape photographer and photo editor.
 Return a JSON object with the following fields:
 
 {
   "title": "A short evocative title for the photo (5 words max)",
   "caption": "A descriptive caption suitable for a gallery (1-2 sentences)",
-  "overall_rating": <number 1-10, one decimal>,
+  "overall_rating": <number 1-10, one decimal. Calibrate against the published standard of the genre, not against the batch. 10 = canonical, career-defining work. 9 = exceptional, accepted by a serious gallery or magazine without hesitation. 8 = strong, publishable, one notable limitation. 7 = above average, real idea but execution fell short in one meaningful way. 6 = competent, no distinctive vision or moment. 5 = mediocre, forgettable. 4 and below = meaningful technical or compositional failures. Resist the pull toward the middle. A 6 should feel like mild disappointment, not a compliment.>,
   "technical_rating": <number 1-10>,
   "composition_rating": <number 1-10>,
   "light_rating": <number 1-10>,
   "impact_rating": <number 1-10>,
   "print_rating": <number 1-10, suitability for large-format wall print>,
   "bw_rating": <number 1-10, suitability for B&W conversion>,
-  "tier": "<A|B|C>",
-  "critique": "A detailed critique covering: technical quality (sharpness, exposure, noise), composition (leading lines, foreground interest, layering), light quality and direction, subject strength, emotional impact, and print potential. Be direct and specific. 150-250 words.",
+  "tier": "<A+|A|B|C. A+ = print it large and hang it — technically excellent, compositionally decisive, light that couldn't be planned. Fewer than 1 in 50 shots earns this. A = gallery-ready within a curated set, strong on at least two of three: technical quality, composition, light. B = keep for documentation or personal memory, not for showing — has one meaningful failure. C = delete: multiple failures, or one fatal one. Do not use B as a default hedge. If unsure between B and C, ask whether you would show this photo to someone whose opinion you respect.>",
+  "critique": "A critique that reads like it's from a senior photo editor deciding whether to publish this, or a curator deciding whether to hang it. Start with what the photograph is doing — its central argument or moment — before addressing anything technical. Then: what is the single strongest element, and what is the single biggest limitation keeping it from being exceptional? Name technical issues only when they undermine the image's intent. Close with one concrete thing the photographer could have done differently in the field — in framing, timing, light choice, or positioning — to get a stronger version of this shot. Write no more than 200 words. Say what needs saying, then stop.",
   "crop_suggestion": "Specific crop or edit recommendations to strengthen the image. If no changes needed, say so. 50-100 words.",
   "bw_rationale": "Why this image would or would not work well as a B&W conversion. Reference specific tonal relationships, textures, or compositional elements. 50-75 words.",
   "tags": ["tag1", "tag2", ...]
 }
 
-Tier definitions:
-- A: Wall-print worthy. Technically excellent, compositionally strong, distinctive light or subject. Would stand alone in a fine art gallery.
-- B: Gallery-quality. Good technically and compositionally but missing one key element (light, foreground, decisive moment). Worth including in a curated set.
-- C: Documentary or personal value only. Technical or compositional issues prevent gallery use.
+Return only the JSON object. No commentary before or after.
 ```
 
 Adjust the user prompt as follows:
