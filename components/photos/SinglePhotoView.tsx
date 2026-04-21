@@ -145,6 +145,7 @@ export function SinglePhotoView({
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [notesValue, setNotesValue] = useState(photo.user_notes ?? '')
   const notesSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bwEnabledRef = useRef(bwEnabled)
 
   const hasPrev = currentIndex > 0
   const hasNext = currentIndex < photos.length - 1
@@ -158,7 +159,9 @@ export function SinglePhotoView({
 
   // Sync B&W state when photo changes
   useEffect(() => {
-    setBwEnabled(forceBw || photo.bw_profile != null)
+    const next = forceBw || photo.bw_profile != null
+    setBwEnabled(next)
+    bwEnabledRef.current = next
     setActiveProfile(photo.bw_profile ?? DEFAULT_BW_PROFILE)
   }, [photo.id, photo.bw_profile, forceBw])
 
@@ -186,7 +189,12 @@ export function SinglePhotoView({
           handleAnalyze()
           break
         case 'b':
-          if (!forceBw) setBwEnabled((v) => !v)
+          if (!forceBw) {
+            const next = !bwEnabledRef.current
+            bwEnabledRef.current = next
+            setBwEnabled(next)
+            if (!next) handleBwSave(null)
+          }
           break
         case 'Delete':
         case 'Backspace':
@@ -621,6 +629,7 @@ export function SinglePhotoView({
                   disabled={forceBw}
                   onClick={() => {
                     const next = !bwEnabled
+                    bwEnabledRef.current = next
                     setBwEnabled(next)
                     if (!next) handleBwSave(null)
                   }}
