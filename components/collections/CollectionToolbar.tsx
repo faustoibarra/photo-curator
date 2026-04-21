@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Settings2,
   Share2,
+  Download,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SubCollection } from '@/lib/types'
@@ -62,6 +63,7 @@ export interface CollectionToolbarProps {
   onGenerateBestOf: () => void
   onRefreshBestOf?: () => void
   onShareSubCollection?: (sub: SubCollection) => void
+  onDownloadSubCollection?: (sub: SubCollection) => void
   onBulkAnalyze: (ids: string[]) => void
   bulkAnalyzingIds?: Set<string>
   bulkNotice: { message: string; type: 'success' | 'error' } | null
@@ -124,6 +126,7 @@ export function CollectionToolbar({
   onGenerateBestOf,
   onRefreshBestOf,
   onShareSubCollection,
+  onDownloadSubCollection,
   onBulkAnalyze,
   bulkAnalyzingIds,
   bulkNotice,
@@ -484,6 +487,17 @@ export function CollectionToolbar({
               >
                 <Share2 className="size-3" />
                 Share
+              </button>
+            )}
+            {onDownloadSubCollection && (
+              <button
+                type="button"
+                onClick={() => onDownloadSubCollection(activeSubCollection)}
+                title="Download all photos as ZIP"
+                className="inline-flex items-center gap-1 h-6 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors border border-transparent hover:border-input"
+              >
+                <Download className="size-3" />
+                Download
               </button>
             )}
             {activeBestOf && onRefreshBestOf && (

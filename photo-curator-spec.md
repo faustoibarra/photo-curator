@@ -87,6 +87,9 @@ user_notes          text
 user_flagged        boolean DEFAULT false
 uploaded_at         timestamptz DEFAULT now()
 sort_order          integer DEFAULT 0
+-- B&W fields
+bw_profile          text           -- 'Classic' | 'Acros' | 'High Contrast' | 'Matte' | 'Selenium'
+bw_processed_url    text           -- URL of pre-processed B&W version (if generated)
 ```
 
 ### `sub_collections`
@@ -105,6 +108,7 @@ share_token           text UNIQUE            -- random token for public share li
 share_enabled         boolean DEFAULT false  -- whether the share link is currently active
 share_allow_downloads boolean DEFAULT false  -- whether public viewers can download originals
 share_created_at      timestamptz            -- when sharing was first enabled
+is_bw                 boolean NOT NULL DEFAULT false  -- all photos displayed/downloaded as B&W
 created_at            timestamptz DEFAULT now()
 ```
 
@@ -652,6 +656,71 @@ A toggle in the Share panel: **"Allow viewers to download photos"**. Stored as `
 
 ---
 
+### Sub-Collection Bulk Download
+
+Photographers can download all photos in a sub-collection as a single ZIP file. A **Download ↓** button appears in the sub-collection tab header, alongside the Share button.
+
+#### B&W Sub-Collections
+
+When `is_bw = true` on the sub-collection, the download pipeline applies server-side grayscale conversion via `sharp`, using each photo's `bw_profile` to match the profile used for in-app display:
+
+| Profile        | `sharp` operations                                            |
+|----------------|---------------------------------------------------------------|
+| Classic        | `.grayscale()`                                                |
+| Acros          | `.grayscale().linear(1.15, -0.08)`                           |
+| High Contrast  | `.grayscale().linear(1.4, -0.12)`                            |
+| Matte          | `.grayscale().linear(0.85, 0.08)`                            |
+| Selenium       | `.grayscale().tint({ r: 210, g: 200, b: 185 })`              |
+
+If a photo's `bw_profile` is null, default to Classic. The download modal displays a note: *"Photos will be downloaded in black & white."*
+
+#### Download Options Modal
+
+```
+┌──────────────────────────────────────────────┐
+│  Download "Wall Art"  (24 photos)            │
+│                                              │
+│  File naming                                 │
+│  ◉ Original filename                         │
+│  ○ Custom prefix + sequence                  │
+│    Prefix: [Wall_Art_          ]             │
+│    Preview: Wall_Art_001.jpg, Wall_Art_002…  │
+│                                              │
+│  Metadata                                    │
+│  ☑ Add title to JPEG metadata               │
+│  ☑ Add caption to JPEG metadata             │
+│    (IPTC + XMP fields, SmugMug-compatible)  │
+│                                              │
+│  ⚫ Photos will be downloaded in black &     │
+│     white.         [only shown if is_bw]    │
+│                                              │
+│  [Cancel]           [Download ZIP ↓]         │
+└──────────────────────────────────────────────┘
+```
+
+Sequence numbers are zero-padded to match the total count (e.g. `001`–`024` for 24 photos). Sort order follows the current sub-collection display order.
+
+#### Metadata Field Mapping (SmugMug-compatible)
+
+| User option | IPTC field                   | XMP field          |
+|-------------|------------------------------|--------------------|
+| Title       | Object Name (IIM 2:05)       | `dc:title`         |
+| Caption     | Caption-Abstract (IIM 2:120) | `dc:description`   |
+
+Both IPTC and XMP are written to ensure SmugMug picks them up regardless of import path. Use `exiftool-vendored` to inject metadata after `sharp` processing.
+
+#### Download Progress
+
+1. Client POSTs options to `POST /api/sub-collections/[id]/download/start` → receives `{ job_id }`.
+2. Client opens an SSE connection to `GET /api/sub-collections/[id]/download/[job_id]/progress`, which emits:
+   - `{ type: 'progress', processed: n, total: N, filename: '...' }` per photo
+   - `{ type: 'ready', download_url: '...' }` when ZIP is complete
+3. UI shows a progress bar (`n / N`) and the current filename being processed.
+4. On `ready`, the browser auto-triggers download of the ZIP.
+5. The server cleans up the temporary ZIP file after it is served or after 5 minutes, whichever comes first.
+
+---
+
 ### Keyboard Shortcuts
 
 
@@ -711,6 +780,25 @@ photos/{user_id}/{collection_id}/{photo_id}_{filename}
 - Generates `share_token` if not already set
 - Sets `share_enabled = true`
 - Returns `{ share_token, share_url }`
+
+### `POST /api/sub-collections/[id]/download/start` — Start a bulk download job
+
+- Accepts `{ naming: 'original' | 'prefix_sequence', prefix?: string, include_title: boolean, include_caption: boolean }`
+- Fetches all photos in the sub-collection (ordered by `sort_order`)
+- Spawns background processing: fetch originals from storage, apply B&W conversion (if `is_bw`), inject IPTC/XMP metadata (if requested), rename per naming config
+- Streams processed files into a ZIP using `archiver`
+- Emits SSE progress events
+- Returns `{ job_id }` immediately; ZIP is built asynchronously
+
+### `GET /api/sub-collections/[id]/download/[job_id]/progress` — SSE progress stream
+
+- SSE stream emitting `progress` events per photo and a final `ready` event with `download_url`
+- Returns 404 if job not found or already expired
+
+### `GET /api/sub-collections/[id]/download/[job_id]/file` — Serve completed ZIP
+
+- Returns `application/zip` with `Content-Disposition: attachment; filename="[sub-collection name].zip"`
+- Deletes the temp file after serving (or after 5 minutes if unclaimed)
 
 ### `DELETE /api/sub-collections/[id]/share` — Disable share link
 
@@ -832,6 +920,10 @@ npm run dev
     /collections/...
     /photos/...
     /sub-collections/...
+      /[id]/download/
+        start/route.ts
+        [job_id]/progress/route.ts
+        [job_id]/file/route.ts
     /share/...
 /components
   /collections/
@@ -843,6 +935,7 @@ npm run dev
     UploadZone.tsx
     DuplicateResolutionModal.tsx  -- conflict resolution before upload
     BestOfModal.tsx               -- configuration modal for Best Of generation
+    DownloadModal.tsx             -- bulk download options + SSE progress bar
   /share/
     PublicGallery.tsx             -- read-only grid for /s/[token]
     PublicPhotoLightbox.tsx       -- lightbox for public view
@@ -879,8 +972,9 @@ npm run dev
 12. Multi-select bulk actions
 13. Best Of generation (API route + config modal + UI)
 14. Sub-collection sharing (share panel + public `/s/[token]` view)
-15. Keyboard shortcuts
-16. Thumbnail generation
+15. Sub-collection bulk download (ZIP with B&W conversion + metadata)
+16. Keyboard shortcuts
+17. Thumbnail generation
 
 ### Dependencies to Install
 
@@ -893,6 +987,8 @@ npm install @radix-ui/react-*        # via shadcn
 npm install lucide-react
 npm install tailwind-merge clsx
 npm install zustand                  # client state for multi-select, filters
+npm install exiftool-vendored        # IPTC/XMP metadata writing for downloads
+npm install archiver @types/archiver # ZIP stream creation
 ```
 
 ### shadcn Components Needed
@@ -912,7 +1008,6 @@ Run `npx shadcn@latest add` for:
 - Relax criteria: focus on amateur photographer
 - Pick a photo as cover photo for a collection
 - Side-by-side comparison view (compare 2 photos)
-- Batch export (download selected photos as ZIP)
 - Share entire collection (not just sub-collection) as public gallery link
 - Integration with SmugMug API for direct upload
 - Print order integration (e.g., Bay Photo, WHCC)

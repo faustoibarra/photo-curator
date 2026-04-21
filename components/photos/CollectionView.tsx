@@ -12,6 +12,7 @@ import {
   type BestOfMeta,
   type PhotoScore,
 } from '@/components/photos/BestOfModal'
+import { DownloadModal } from '@/components/photos/DownloadModal'
 import { PhotoGrid } from './PhotoGrid'
 import { SinglePhotoView } from './SinglePhotoView'
 
@@ -118,6 +119,7 @@ export function CollectionView({
   const [bestOfModalOpen, setBestOfModalOpen] = useState(false)
   const [bestOfMeta, setBestOfMeta] = useState<BestOfMeta | null>(null)
   const [shareModalSub, setShareModalSub] = useState<SubCollection | null>(null)
+  const [downloadModalSub, setDownloadModalSub] = useState<SubCollection | null>(null)
 
   // Bulk action notice (lifted from toolbar so post-create flow can set it)
   const [bulkNotice, setBulkNotice] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -547,6 +549,19 @@ export function CollectionView({
         />
       )}
 
+      {downloadModalSub && (
+        <DownloadModal
+          open={!!downloadModalSub}
+          onOpenChange={(open) => { if (!open) setDownloadModalSub(null) }}
+          subCollection={downloadModalSub}
+          photoCount={
+            subCollectionPhotos.filter(
+              (sp) => sp.sub_collection_id === downloadModalSub.id
+            ).length
+          }
+        />
+      )}
+
       <BestOfModal
         open={bestOfModalOpen}
         onOpenChange={setBestOfModalOpen}
@@ -587,6 +602,7 @@ export function CollectionView({
         onNewSubCollectionBulk={handleNewSubCollectionBulk}
         onGenerateBestOf={() => setBestOfModalOpen(true)}
         onShareSubCollection={(sub) => setShareModalSub(sub)}
+        onDownloadSubCollection={(sub) => setDownloadModalSub(sub)}
         bulkNotice={bulkNotice}
         onBulkNoticeDismiss={() => setBulkNotice(null)}
         onBulkAddResult={handleBulkAddResult}
