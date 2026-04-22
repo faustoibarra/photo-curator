@@ -81,7 +81,14 @@
       "Bash(export PATH=\"$HOME/.bun/bin:$PATH\")",
       "Bash(bash setup:*)",
       "Bash(cat /Users/fausto/claude-projects/photo-curator/next.config.*)",
-      "Skill(ship)"
+      "Skill(ship)",
+      "Skill(investigate)",
+      "Skill(plan-design-review)",
+      "Bash(sort find:*)",
+      "Bash(git fetch:*)",
+      "Bash(find:*)",
+      "Bash(gh api *)",
+      "Bash(git checkout *)"
     ]
   }
 }
