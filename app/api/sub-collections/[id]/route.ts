@@ -46,3 +46,29 @@ export async function PATCH(
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json(data)
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: existing } = await supabase
+    .from('sub_collections')
+    .select('id')
+    .eq('id', params.id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!existing) return Response.json({ error: 'Not found' }, { status: 404 })
+
+  const { error } = await supabase
+    .from('sub_collections')
+    .delete()
+    .eq('id', params.id)
+
+  if (error) return Response.json({ error: error.message }, { status: 500 })
+  return new Response(null, { status: 204 })
+}

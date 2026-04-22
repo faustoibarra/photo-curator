@@ -29,12 +29,13 @@ export async function POST(
     .single()
   if (!collection) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const { filename, contentType, resolution = 'new', existingPhotoId } = await request.json()
+  const { filename, contentType, mimeType, resolution = 'new', existingPhotoId } = await request.json()
+  const resolvedContentType = contentType ?? mimeType
 
-  if (!filename || !contentType) {
-    return NextResponse.json({ error: 'filename and contentType required' }, { status: 400 })
+  if (!filename || !resolvedContentType) {
+    return NextResponse.json({ error: 'filename and contentType (or mimeType) required' }, { status: 400 })
   }
-  if (!ACCEPTED_TYPES.has(contentType)) {
+  if (!ACCEPTED_TYPES.has(resolvedContentType)) {
     return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 })
   }
 
@@ -79,6 +80,7 @@ export async function POST(
     thumbPath,
     publicUrl,
     originalUploadUrl: origResult.data.signedUrl,
+    uploadUrl: origResult.data.signedUrl,
     thumbUploadUrl: thumbResult.data.signedUrl,
   })
 }

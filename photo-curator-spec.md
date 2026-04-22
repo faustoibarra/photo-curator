@@ -48,7 +48,7 @@ user_id         uuid REFERENCES auth.users NOT NULL
 name            text NOT NULL
 description     text
 cover_photo_id  uuid  -- FK to photos, set after insert
-type            text DEFAULT 'nature trip'  -- 'nature trip' | 'city trip' | 'sports' | 'event'
+type            text DEFAULT 'nature trip'  -- 'nature trip' | 'city trip' | 'sports' | 'social event'
 created_at      timestamptz DEFAULT now()
 updated_at      timestamptz DEFAULT now()
 ```
@@ -455,7 +455,7 @@ This is the primary working view. It has two main modes:
 
 - Name (required)
 - Description (optional)
-- Type selector: Trip / Event / Project
+- Type selector: Nature Trip / City Trip / Sports / Social Event
 
 ---
 
@@ -816,11 +816,65 @@ photos/{user_id}/{collection_id}/{photo_id}_{filename}
 - Explicitly excludes all rating fields (`ai_overall_rating`, `ai_tier`, `ai_*_rating`), critique fields (`ai_critique`, `ai_crop_suggestion`, `ai_bw_rationale`), and all user fields
 - Returns 404 if `share_enabled = false` or token not found
 
+### `POST /api/collections/[id]/photos/upload-url` — Get a signed upload URL (iOS)
+
+Used by the iOS app for direct-to-Supabase Storage uploads (bypasses the Next.js server
+for binary data, avoiding memory limits). POST (not GET) because the server generates a
+`photoId` and reserves the storage path as part of the response.
+
+**Request body:**
+```json
+{ "filename": "IMG_1234.jpg", "mimeType": "image/jpeg" }
+```
+
+**Response:**
+```json
+{
+  "uploadUrl": "https://...(signed Supabase Storage PUT URL, 10-min TTL)",
+  "storagePath": "photos/{user_id}/{collection_id}/{photo_id}_IMG_1234.jpg",
+  "photoId": "uuid"
+}
+```
+
+The iOS client PUTs the file directly to `uploadUrl`, then calls `finalize` below.
+
+### `POST /api/collections/[id]/photos/finalize` — Register a direct-uploaded photo (iOS)
+
+Called after the iOS client successfully PUTs to the signed URL. Creates the photo
+record in the database and generates a thumbnail server-side.
+
+**Request body:**
+```json
+{
+  "photoId": "uuid",
+  "storagePath": "photos/{user_id}/{collection_id}/{photo_id}_IMG_1234.jpg",
+  "width": 4000,
+  "height": 3000,
+  "fileSize": 8192000
+}
+```
+
+**Response:** The full photo object (same shape as `GET /api/photos/[id]`).
+
 ### `POST /api/collections` — Create collection
 
 ### `GET /api/collections` — List user's collections
 
-### `POST /api/collections/[id]/photos` — Upload photo(s)
+**Response shape includes** a `tierCounts` field per collection (for iOS tier bar display):
+```json
+{
+  "id": "uuid",
+  "name": "Torres del Paine",
+  ...
+  "photoCount": 54,
+  "tierCounts": { "a": 12, "b": 34, "c": 8 }
+}
+```
+`tierCounts` is `null` for collections with no analyzed photos.
+
+### `POST /api/collections/[id]/photos` — Upload photo(s) (web)
+
+Web-only multipart upload route.
 
 - Accepts multipart form data
 - Uploads to Supabase Storage
@@ -846,6 +900,16 @@ photos/{user_id}/{collection_id}/{photo_id}_{filename}
 ### `DELETE /api/sub-collections/[id]/photos` — Remove photos from sub-collection
 
 ### `DELETE /api/photos/[id]` — Delete single photo (removes from storage + DB)
+
+### `PATCH /api/sub-collections/[id]` — Rename sub-collection (web only in v1)
+
+- Accepts `{ name: string }`
+- Returns updated sub-collection
+
+### `DELETE /api/sub-collections/[id]` — Delete sub-collection (web only in v1)
+
+- Deletes the sub-collection and all `sub_collection_photos` rows for it
+- Does NOT delete the photos themselves — only removes the sub-collection grouping
 
 ---
 

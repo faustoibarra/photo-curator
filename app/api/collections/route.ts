@@ -21,7 +21,36 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json(data)
+  const collectionIds = (data ?? []).map((c) => c.id)
+  const { data: tierRows } = collectionIds.length
+    ? await supabase
+        .from('photos')
+        .select('collection_id, ai_tier')
+        .in('collection_id', collectionIds)
+        .not('ai_tier', 'is', null)
+    : { data: [] }
+
+  // Group tier counts by collection_id
+  const tierMap: Record<string, { a: number; b: number; c: number }> = {}
+  for (const row of tierRows ?? []) {
+    const cid = row.collection_id as string
+    if (!tierMap[cid]) tierMap[cid] = { a: 0, b: 0, c: 0 }
+    const tier = (row.ai_tier as string).toLowerCase() as 'a' | 'b' | 'c'
+    if (tier in tierMap[cid]) tierMap[cid][tier]++
+  }
+
+  const response = (data ?? []).map((c) => {
+    const photos = c.photos as { count: number }[]
+    const photoCount: number = photos?.[0]?.count ?? 0
+    const tc = tierMap[c.id]
+    const tierCounts = tc && (tc.a + tc.b + tc.c) > 0 ? tc : null
+    const { photos: _photos, ...rest } = c
+    return { ...rest, photoCount, tierCounts }
+  })
+
+  console.log('GET /api/collections sample:', JSON.stringify(response[0] ?? null, null, 2))
+
+  return NextResponse.json(response)
 }
 
 export async function POST(request: Request) {
