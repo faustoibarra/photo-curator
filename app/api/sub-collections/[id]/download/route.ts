@@ -1,12 +1,9 @@
-import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
 import JSZip from 'jszip'
 import sharp from 'sharp'
 import { createClient } from '@/lib/supabase/server'
 import { BW_PROFILES, DEFAULT_BW_PROFILE } from '@/lib/bw-profiles'
 import { injectJpegMetadata } from '@/lib/download/metadata'
-
-const CONCURRENCY = 5
 
 interface PhotoRow {
   id: string
@@ -44,10 +41,10 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const naming: 'original' | 'prefix_sequence' = body.naming === 'prefix_sequence' ? 'prefix_sequence' : 'original'
-  const prefix: string = typeof body.prefix === 'string'
-    ? body.prefix.replace(/[^a-z0-9_\-]/gi, '_').slice(0, 64)
-    : 'photo_'
+  const naming: 'original' | 'prefix_sequence' =
+    body.naming === 'prefix_sequence' ? 'prefix_sequence' : 'original'
+  const prefix: string =
+    typeof body.prefix === 'string' ? body.prefix : 'photo_'
   const includeTitle: boolean = body.include_title === true
   const includeCaption: boolean = body.include_caption === true
 
@@ -67,10 +64,14 @@ export async function POST(
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 
   const padLen = Math.max(3, String(photos.length).length)
+  // Track original (pre-dedup) names to correctly count duplicates
+  const seenOriginal = new Map<string, number>()
+  const zip = new JSZip()
 
-  // Compute filenames in order (dedup depends on insertion order)
-  const seenNames = new Map<string, number>()
-  const entries = photos.map((photo, i) => {
+  for (let i = 0; i < photos.length; i++) {
+    const photo = photos[i]
+
+    // --- Compute filename ---
     let filename: string
     if (naming === 'prefix_sequence') {
       const seq = String(i + 1).padStart(padLen, '0')
@@ -78,11 +79,12 @@ export async function POST(
       const ext = dotIdx > -1 ? photo.filename.slice(dotIdx) : '.jpg'
       filename = `${prefix}${seq}${ext}`
     } else {
-      // Strip directory separators from DB-sourced filenames
-      filename = path.posix.basename(photo.filename)
+      filename = photo.filename.replace(/.*[/\\]/, '') // strip any path prefix
     }
 
-    const count = seenNames.get(filename) ?? 0
+    // Deduplicate: track by the original computed name
+    const count = seenOriginal.get(filename) ?? 0
+    seenOriginal.set(filename, count + 1)
     if (count > 0) {
       const dotIdx = filename.lastIndexOf('.')
       filename =
@@ -90,66 +92,42 @@ export async function POST(
           ? `${filename.slice(0, dotIdx)}_${count}${filename.slice(dotIdx)}`
           : `${filename}_${count}`
     }
-    seenNames.set(filename, count + 1)
 
-    return { photo, filename, index: i }
-  })
+    // --- Fetch photo ---
+    const fetchRes = await fetch(photo.storage_url, { cache: 'no-store' })
+    if (!fetchRes.ok) continue
 
-  // Fetch and process photos in parallel batches
-  const buffers: (Buffer | null)[] = new Array(photos.length).fill(null)
-  for (let i = 0; i < entries.length; i += CONCURRENCY) {
-    const batch = entries.slice(i, i + CONCURRENCY)
-    await Promise.all(
-      batch.map(async ({ photo, index }) => {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 30_000)
-        let fetchRes: Response
-        try {
-          fetchRes = await fetch(photo.storage_url, { cache: 'no-store', signal: controller.signal })
-        } catch {
-          return
-        } finally {
-          clearTimeout(timeoutId)
-        }
-        if (!fetchRes.ok) return
+    let buffer: Buffer = Buffer.from(await fetchRes.arrayBuffer() as ArrayBuffer)
 
-        let buffer: Buffer = Buffer.from(await fetchRes.arrayBuffer() as ArrayBuffer)
-        // Detect JPEG by magic bytes (FF D8), not filename extension
-        const isJpeg = buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8
+    // Detect JPEG by magic bytes (FF D8), not filename extension
+    const isJpeg = buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8
 
-        if (sub.is_bw) {
-          const profileKey = photo.bw_profile ?? DEFAULT_BW_PROFILE
-          const profile = BW_PROFILES[profileKey] ?? BW_PROFILES[DEFAULT_BW_PROFILE]
-          const { r, g, b } = profile.sharp
-          buffer = await sharp(buffer)
-            .recomb([[r, g, b], [r, g, b], [r, g, b]])
-            .jpeg({ quality: 95 })
-            .toBuffer()
-          if (includeTitle || includeCaption) {
-            buffer = injectJpegMetadata(
-              buffer,
-              includeTitle ? photo.ai_title : null,
-              includeCaption ? photo.ai_caption : null
-            )
-          }
-        } else if (isJpeg && (includeTitle || includeCaption)) {
-          buffer = injectJpegMetadata(
-            buffer,
-            includeTitle ? photo.ai_title : null,
-            includeCaption ? photo.ai_caption : null
-          )
-        }
+    // --- B&W conversion ---
+    if (sub.is_bw) {
+      const profileKey = photo.bw_profile ?? DEFAULT_BW_PROFILE
+      const profile = BW_PROFILES[profileKey] ?? BW_PROFILES[DEFAULT_BW_PROFILE]
+      const { r, g, b } = profile.sharp
+      buffer = await sharp(buffer)
+        .recomb([[r, g, b], [r, g, b], [r, g, b]])
+        .jpeg({ quality: 95 })
+        .toBuffer()
+      // Output is JPEG after sharp conversion
+      if (includeTitle || includeCaption) {
+        buffer = injectJpegMetadata(
+          buffer,
+          includeTitle ? photo.ai_title : null,
+          includeCaption ? photo.ai_caption : null
+        )
+      }
+    } else if (isJpeg && (includeTitle || includeCaption)) {
+      buffer = injectJpegMetadata(
+        buffer,
+        includeTitle ? photo.ai_title : null,
+        includeCaption ? photo.ai_caption : null
+      )
+    }
 
-        buffers[index] = buffer
-      })
-    )
-  }
-
-  // Add to ZIP in original sort order
-  const zip = new JSZip()
-  for (const { filename, index } of entries) {
-    const buffer = buffers[index]
-    if (buffer) zip.file(filename, buffer)
+    zip.file(filename, buffer)
   }
 
   const zipBuffer = await zip.generateAsync({ type: 'arraybuffer' })
