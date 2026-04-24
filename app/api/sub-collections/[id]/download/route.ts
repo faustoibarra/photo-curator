@@ -68,6 +68,18 @@ export async function POST(
   const seenOriginal = new Map<string, number>()
   const zip = new JSZip()
 
+  const wantsMetadata = includeTitle || includeCaption
+  // When the output is guaranteed to be JPEG (B&W conversion, or metadata was
+  // requested and we re-encoded a non-JPEG buffer), normalize the ZIP filename
+  // extension to .jpg so the archive doesn't mix .jpg/.jpeg/.heic/etc.
+  const toJpgExt = (name: string) =>
+    name.replace(/\.(jpe?g|png|tiff?|heic|webp)$/i, '.jpg')
+
+  // Output is always JPEG (and thus .jpg-named) when B&W conversion runs or
+  // when metadata is requested. Knowing this upfront lets dedup operate on the
+  // final filename so .jpeg/.jpg collisions are resolved correctly.
+  const outputIsJpeg = sub.is_bw || wantsMetadata
+
   for (let i = 0; i < photos.length; i++) {
     const photo = photos[i]
 
@@ -81,8 +93,9 @@ export async function POST(
     } else {
       filename = photo.filename.replace(/.*[/\\]/, '') // strip any path prefix
     }
+    if (outputIsJpeg) filename = toJpgExt(filename)
 
-    // Deduplicate: track by the original computed name
+    // Deduplicate: track by the final (post-normalization) name
     const count = seenOriginal.get(filename) ?? 0
     seenOriginal.set(filename, count + 1)
     if (count > 0) {
@@ -111,15 +124,20 @@ export async function POST(
         .recomb([[r, g, b], [r, g, b], [r, g, b]])
         .jpeg({ quality: 95 })
         .toBuffer()
-      // Output is JPEG after sharp conversion
-      if (includeTitle || includeCaption) {
+      if (wantsMetadata) {
         buffer = injectJpegMetadata(
           buffer,
           includeTitle ? photo.ai_title : null,
           includeCaption ? photo.ai_caption : null
         )
       }
-    } else if (isJpeg && (includeTitle || includeCaption)) {
+    } else if (wantsMetadata) {
+      // Guarantee JPEG output so metadata injection succeeds. Non-JPEG buffers
+      // (e.g. HEIC uploaded from iOS with a .jpg filename) would otherwise be
+      // passed through untouched and ship without metadata.
+      if (!isJpeg) {
+        buffer = await sharp(buffer).jpeg({ quality: 95 }).toBuffer()
+      }
       buffer = injectJpegMetadata(
         buffer,
         includeTitle ? photo.ai_title : null,
