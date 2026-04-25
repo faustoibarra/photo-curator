@@ -64,6 +64,9 @@ export async function DELETE(
 
   if (!existing) return Response.json({ error: 'Not found' }, { status: 404 })
 
+  // Remove junction rows first — the FK has no ON DELETE CASCADE
+  await supabase.from('sub_collection_photos').delete().eq('sub_collection_id', params.id)
+
   const { error } = await supabase
     .from('sub_collections')
     .delete()
