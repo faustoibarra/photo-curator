@@ -120,6 +120,7 @@ export function CollectionView({
   const [bestOfMeta, setBestOfMeta] = useState<BestOfMeta | null>(null)
   const [shareModalSub, setShareModalSub] = useState<SubCollection | null>(null)
   const [downloadModalSub, setDownloadModalSub] = useState<SubCollection | null>(null)
+  const [, setDeletingSubId] = useState<string | null>(null)
 
   // Bulk action notice (lifted from toolbar so post-create flow can set it)
   const [bulkNotice, setBulkNotice] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -452,6 +453,19 @@ export function CollectionView({
     setNewSubModalOpen(true)
   }, [])
 
+  const handleDeleteSubCollection = useCallback(async (sub: SubCollection) => {
+    setDeletingSubId(sub.id)
+    try {
+      const res = await fetch(`/api/sub-collections/${sub.id}`, { method: 'DELETE' })
+      if (!res.ok) return
+      setSubCollections((prev) => prev.filter((s) => s.id !== sub.id))
+      setSubCollectionPhotos((prev) => prev.filter((sp) => sp.sub_collection_id !== sub.id))
+      if (activeSubId === sub.id) setActiveSubId(null)
+    } finally {
+      setDeletingSubId(null)
+    }
+  }, [activeSubId])
+
   const handleBulkAddResult = useCallback(
     (result: { added: number; error?: string }, subName: string) => {
       if (result.error) {
@@ -603,6 +617,7 @@ export function CollectionView({
         onGenerateBestOf={() => setBestOfModalOpen(true)}
         onShareSubCollection={(sub) => setShareModalSub(sub)}
         onDownloadSubCollection={(sub) => setDownloadModalSub(sub)}
+        onDeleteSubCollection={handleDeleteSubCollection}
         bulkNotice={bulkNotice}
         onBulkNoticeDismiss={() => setBulkNotice(null)}
         onBulkAddResult={handleBulkAddResult}

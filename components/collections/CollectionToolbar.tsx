@@ -64,6 +64,7 @@ export interface CollectionToolbarProps {
   onRefreshBestOf?: () => void
   onShareSubCollection?: (sub: SubCollection) => void
   onDownloadSubCollection?: (sub: SubCollection) => void
+  onDeleteSubCollection?: (sub: SubCollection) => void
   onBulkAnalyze: (ids: string[]) => void
   bulkAnalyzingIds?: Set<string>
   bulkNotice: { message: string; type: 'success' | 'error' } | null
@@ -127,6 +128,7 @@ export function CollectionToolbar({
   onRefreshBestOf,
   onShareSubCollection,
   onDownloadSubCollection,
+  onDeleteSubCollection,
   onBulkAnalyze,
   bulkAnalyzingIds,
   bulkNotice,
@@ -136,6 +138,7 @@ export function CollectionToolbar({
 }: CollectionToolbarProps) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmDeleteSub, setConfirmDeleteSub] = useState(false)
   const [bulkAddLoading, setBulkAddLoading] = useState(false)
   const [bulkRemoveLoading, setBulkRemoveLoading] = useState(false)
 
@@ -194,6 +197,38 @@ export function CollectionToolbar({
               className="px-3 py-1.5 text-sm rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
             >
               {deleting ? 'Removing…' : 'Remove'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sub-collection delete confirmation dialog */}
+      <Dialog open={confirmDeleteSub} onOpenChange={setConfirmDeleteSub}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete &ldquo;{activeSubCollection?.name}&rdquo;?</DialogTitle>
+            <DialogDescription>
+              This sub-collection will be deleted. The photos inside it will not be removed from the
+              collection. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setConfirmDeleteSub(false)}
+              className="px-3 py-1.5 text-sm rounded-lg border hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (activeSubCollection) {
+                  onDeleteSubCollection?.(activeSubCollection)
+                }
+                setConfirmDeleteSub(false)
+              }}
+              className="px-3 py-1.5 text-sm rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+            >
+              Delete
             </button>
           </DialogFooter>
         </DialogContent>
@@ -520,6 +555,17 @@ export function CollectionToolbar({
               >
                 <Settings2 className="size-3" />
                 Reconfigure
+              </button>
+            )}
+            {onDeleteSubCollection && activeSubCollection && (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteSub(true)}
+                title="Delete this sub-collection"
+                className="inline-flex items-center gap-1 h-6 px-2 rounded text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors border border-transparent hover:border-destructive/30"
+              >
+                <Trash2 className="size-3" />
+                Delete
               </button>
             )}
           </div>
