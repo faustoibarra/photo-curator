@@ -44,7 +44,7 @@ export async function GET() {
     const photoCount: number = photos?.[0]?.count ?? 0
     const tc = tierMap[c.id]
     const tierCounts = tc && (tc.a + tc.b + tc.c) > 0 ? tc : null
-    const { photos: _photos, ...rest } = c
+    const { photos: _photos, ...rest } = c // eslint-disable-line @typescript-eslint/no-unused-vars
     return { ...rest, photoCount, tierCounts }
   })
 
