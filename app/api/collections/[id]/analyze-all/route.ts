@@ -10,7 +10,7 @@ interface RouteContext {
 
 async function analyzePhotoInternal(photoId: string, cookies: string): Promise<void> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  const url = `${baseUrl}/api/photos/analyze/${photoId}`
+  const url = `${baseUrl}/api/photos/${photoId}`
 
   console.log(`[Queue] → Triggering analysis for photo ${photoId}`)
 

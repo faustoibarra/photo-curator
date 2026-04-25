@@ -12,6 +12,22 @@ interface RouteContext {
   params: { id: string }
 }
 
+export async function GET(_req: NextRequest, { params }: RouteContext) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: photo } = await supabase
+    .from('photos')
+    .select('*')
+    .eq('id', params.id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!photo) return Response.json({ error: 'Not found' }, { status: 404 })
+  return Response.json(photo)
+}
+
 export async function POST(_req: NextRequest, { params }: RouteContext) {
   const supabase = createClient()
   const serviceClient = createServiceClient()
