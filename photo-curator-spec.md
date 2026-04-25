@@ -757,17 +757,59 @@ photos/{user_id}/{collection_id}/{photo_id}_{filename}
 
 ## API Routes / Server Actions
 
+### `GET /api/collections` — List user's collections
+
+Each item in the response array includes `photoCount` and `tierCounts`:
+
+```json
+{
+  "id": "uuid",
+  "name": "Torres del Paine",
+  "description": "...",
+  "type": "nature trip",
+  "cover_photo_id": "uuid | null",
+  "created_at": "...",
+  "updated_at": "...",
+  "photoCount": 54,
+  "tierCounts": { "a": 12, "b": 34, "c": 8 }
+}
+```
+
+`tierCounts` is `null` for collections with no analyzed photos.
+
+### `POST /api/collections` — Create collection
+
+Accepts `{ name, description?, type }`. Returns the created collection object.
+
+### `GET /api/collections/[id]` — Collection detail with all photos
+
+Returns the collection row merged with a `photos` array (all photos ordered by
+`uploaded_at` descending). Used by the iOS app to load the collection grid.
+
+```json
+{
+  "id": "uuid",
+  "name": "...",
+  "photos": [ /* full photo objects */ ]
+}
+```
+
+### `PATCH /api/collections/[id]` — Update collection metadata
+
+Accepts any subset of `{ name, description, type }`. Returns the updated collection.
+
 ### `POST /api/collections/[id]/best-of` — Generate / regenerate Best Of sub-collection
 
 - Accepts config body (weights, count, filters)
 - Computes composite scores for all eligible photos
 - Upserts the Best Of sub-collection and its photo membership
-- Returns sub-collection with selected photos and their scores
+- Returns `{ sub_collection, photos, meta }` where `photos` is an array of
+  `{ photo_id, score, score_breakdown }` and `meta` includes weight info
 
 ### `POST /api/collections/[id]/check-duplicates` — Check filenames against existing photos
 
 - Accepts `{ filenames: string[] }`
-- Returns array of conflicts: `{ filename, existing_photo_id, thumbnail_url, uploaded_at, ai_overall_rating }`
+- Returns `{ duplicates: [{ filename, existing_photo_id, thumbnail_url, uploaded_at, ai_overall_rating }] }`
 
 ### `DELETE /api/collections/[id]/photos` — Bulk remove photos from collection
 
@@ -775,141 +817,204 @@ photos/{user_id}/{collection_id}/{photo_id}_{filename}
 - Deletes photo records, storage files, thumbnails, and sub-collection memberships
 - If any deleted photo was the collection cover, resets cover to next available photo
 
-### `POST /api/sub-collections/[id]/share` — Enable sharing and generate/return share token
+### `POST /api/collections/[id]/photos` — Upload photo (web multipart)
 
-- Generates `share_token` if not already set
-- Sets `share_enabled = true`
-- Returns `{ share_token, share_url }`
+Web-only route. Accepts `multipart/form-data` with fields:
 
-### `POST /api/sub-collections/[id]/download/start` — Start a bulk download job
+| Field | Type | Notes |
+|-------|------|-------|
+| `file` | File | The image binary |
+| `resolution` | `'new' \| 'replace' \| 'keep_both'` | Default `'new'` |
+| `existing_photo_id` | string | Required when `resolution = 'replace'` |
 
-- Accepts `{ naming: 'original' | 'prefix_sequence', prefix?: string, include_title: boolean, include_caption: boolean }`
-- Fetches all photos in the sub-collection (ordered by `sort_order`)
-- Spawns background processing: fetch originals from storage, apply B&W conversion (if `is_bw`), inject IPTC/XMP metadata (if requested), rename per naming config
-- Streams processed files into a ZIP using `archiver`
-- Emits SSE progress events
-- Returns `{ job_id }` immediately; ZIP is built asynchronously
+Generates a thumbnail server-side, uploads both files to Supabase Storage, inserts
+the photo record, and returns `{ photo }`.
 
-### `GET /api/sub-collections/[id]/download/[job_id]/progress` — SSE progress stream
+### `POST /api/collections/[id]/photos/upload-url` — Get signed upload URL (iOS)
 
-- SSE stream emitting `progress` events per photo and a final `ready` event with `download_url`
-- Returns 404 if job not found or already expired
-
-### `GET /api/sub-collections/[id]/download/[job_id]/file` — Serve completed ZIP
-
-- Returns `application/zip` with `Content-Disposition: attachment; filename="[sub-collection name].zip"`
-- Deletes the temp file after serving (or after 5 minutes if unclaimed)
-
-### `DELETE /api/sub-collections/[id]/share` — Disable share link
-
-- Sets `share_enabled = false` (token preserved for potential re-enable)
-
-### `POST /api/sub-collections/[id]/share/regenerate` — Regenerate share token
-
-- Creates a new `share_token`, invalidating the previous URL
-- Sets `share_enabled = true`
-- Returns new `{ share_token, share_url }`
-
-### `GET /api/share/[token]` — Fetch public sub-collection data (no auth required)
-
-- Returns sub-collection name, collection name, and photos with public fields only: `id`, `storage_url`, `ai_title`, `ai_caption`, `ai_tags`
-- Explicitly excludes all rating fields (`ai_overall_rating`, `ai_tier`, `ai_*_rating`), critique fields (`ai_critique`, `ai_crop_suggestion`, `ai_bw_rationale`), and all user fields
-- Returns 404 if `share_enabled = false` or token not found
-
-### `POST /api/collections/[id]/photos/upload-url` — Get a signed upload URL (iOS)
-
-Used by the iOS app for direct-to-Supabase Storage uploads (bypasses the Next.js server
-for binary data, avoiding memory limits). POST (not GET) because the server generates a
-`photoId` and reserves the storage path as part of the response.
+Used by the iOS app for direct-to-Supabase Storage uploads, bypassing the Next.js
+server for binary data. Generates a `photoId`, creates signed PUT URLs for both the
+original and the thumbnail, and returns all URLs the client needs.
 
 **Request body:**
-```json
-{ "filename": "IMG_1234.jpg", "mimeType": "image/jpeg" }
-```
 
-**Response:**
 ```json
 {
-  "uploadUrl": "https://...(signed Supabase Storage PUT URL, 10-min TTL)",
-  "storagePath": "photos/{user_id}/{collection_id}/{photo_id}_IMG_1234.jpg",
-  "photoId": "uuid"
+  "filename": "IMG_1234.jpg",
+  "mimeType": "image/jpeg",
+  "resolution": "new",
+  "existingPhotoId": "uuid"
 }
 ```
 
-The iOS client PUTs the file directly to `uploadUrl`, then calls `finalize` below.
+`mimeType` and `contentType` are both accepted (aliases). `resolution` defaults to
+`'new'`; set to `'replace'` + `existingPhotoId` for the duplicate-replace flow, or
+`'keep_both'` to upload alongside the existing file (filename gets `_2` suffix).
 
-### `POST /api/collections/[id]/photos/finalize` — Register a direct-uploaded photo (iOS)
+**Response:**
 
-Called after the iOS client successfully PUTs to the signed URL. Creates the photo
-record in the database and generates a thumbnail server-side.
-
-**Request body:**
 ```json
 {
   "photoId": "uuid",
+  "filename": "IMG_1234.jpg",
   "storagePath": "photos/{user_id}/{collection_id}/{photo_id}_IMG_1234.jpg",
-  "width": 4000,
-  "height": 3000,
-  "fileSize": 8192000
+  "thumbPath": "photos/{user_id}/{collection_id}/thumbs/{photo_id}_thumb.jpg",
+  "publicUrl": "https://...(permanent public URL of the original)",
+  "uploadUrl": "https://...(signed PUT URL for the original, 10-min TTL)",
+  "originalUploadUrl": "https://...(same as uploadUrl — alias)",
+  "thumbUploadUrl": "https://...(signed PUT URL for the thumbnail)"
 }
 ```
 
-**Response:** The full photo object (same shape as `GET /api/photos/[id]`).
+The iOS client:
+1. PUTs the original file to `uploadUrl`
+2. Optionally PUTs a JPEG thumbnail to `thumbUploadUrl`
+3. Calls `finalize` with `photoId`, `storagePath`, `publicUrl`, etc.
 
-### `POST /api/collections` — Create collection
+### `POST /api/collections/[id]/photos/finalize` — Register a direct-uploaded photo (iOS)
 
-### `GET /api/collections` — List user's collections
+Called after a successful PUT to the signed URL. Creates (or updates, for `replace`)
+the photo record and returns it.
 
-**Response shape includes** a `tierCounts` field per collection (for iOS tier bar display):
+**Request body:**
+
 ```json
 {
-  "id": "uuid",
-  "name": "Torres del Paine",
-  ...
-  "photoCount": 54,
-  "tierCounts": { "a": 12, "b": 34, "c": 8 }
+  "photoId": "uuid",
+  "filename": "IMG_1234.jpg",
+  "storagePath": "photos/{user_id}/{collection_id}/{photo_id}_IMG_1234.jpg",
+  "thumbPath": "photos/{user_id}/{collection_id}/thumbs/{photo_id}_thumb.jpg",
+  "publicUrl": "https://...",
+  "width": 4000,
+  "height": 3000,
+  "fileSize": 8192000,
+  "resolution": "new",
+  "existingPhotoId": "uuid"
 }
 ```
-`tierCounts` is `null` for collections with no analyzed photos.
 
-### `POST /api/collections/[id]/photos` — Upload photo(s) (web)
+`resolution` and `existingPhotoId` mirror the values passed to `upload-url`. When
+`resolution = 'replace'`, the existing photo record is updated in place (AI fields
+cleared, user rating / notes / flags preserved).
 
-Web-only multipart upload route.
-
-- Accepts multipart form data
-- Uploads to Supabase Storage
-- Creates photo record in DB
-- Returns photo ID(s)
-
-### `POST /api/photos/[id]/analyze` — Trigger AI analysis for one photo
-
-- Fetches photo from storage
-- Resizes to 1500px
-- Calls Claude API with vision
-- Stores results in DB
-- Returns updated photo record
+**Response:** `{ photo }` — the full photo object.
 
 ### `POST /api/collections/[id]/analyze-all` — Queue analysis for all unanalyzed photos
 
+Triggers AI analysis for every photo in the collection that has not yet been analyzed.
+Processing is sequential and runs in-process; returns immediately while analysis
+continues in the background.
+
+### `POST /api/photos/[id]/analyze` — Trigger AI analysis for one photo
+
+- Fetches photo from storage, resizes to 1500px
+- Calls Claude API with vision using collection-type-appropriate prompt
+- Stores all AI fields in DB
+- Returns the updated photo object
+
+### `GET /api/photos/[id]` — Fetch a single photo
+
+Returns the full photo object including all AI fields.
+
 ### `PATCH /api/photos/[id]` — Update user rating, notes, flag
+
+Accepts any subset of `{ user_rating, user_notes, user_flagged }`. Returns the
+updated photo object.
+
+### `DELETE /api/photos/[id]` — Delete single photo
+
+Removes the photo record from DB, deletes the original and thumbnail from Supabase
+Storage, removes all `sub_collection_photos` rows, and resets the collection cover
+if this photo was it.
 
 ### `POST /api/sub-collections` — Create sub-collection
 
+Accepts `{ collection_id, name, description?, color?, is_bw? }`. Returns the created
+sub-collection.
+
+### `PATCH /api/sub-collections/[id]` — Update sub-collection / manage share link
+
+Accepts any subset of:
+
+```json
+{
+  "name": "Wall Art",
+  "description": "...",
+  "color": "#hex",
+  "share_enabled": true,
+  "share_allow_downloads": false
+}
+```
+
+When `share_enabled` is set to `true` for the first time, the server auto-generates
+`share_token` and sets `share_created_at`. Returns the full updated sub-collection
+object (which includes `share_token` and the permanent share URL can be constructed
+as `{NEXT_PUBLIC_APP_URL}/s/{share_token}`).
+
+This single endpoint handles enable, disable, and reconfigure of sharing — there are
+no separate `/share` or `/share/regenerate` routes.
+
+### `DELETE /api/sub-collections/[id]` — Delete sub-collection
+
+Explicitly removes all `sub_collection_photos` rows for this sub-collection, then
+deletes the sub-collection record. The photos themselves are not deleted. Returns 204.
+
+> Note: the `sub_collection_id` FK on `sub_collection_photos` has no `ON DELETE CASCADE`,
+> so the junction rows must be (and are) deleted manually before the parent row.
+
 ### `POST /api/sub-collections/[id]/photos` — Add photos to sub-collection
+
+Accepts `{ photo_ids: string[] }`. Inserts rows into `sub_collection_photos`.
+Returns `{ added: number }`.
 
 ### `DELETE /api/sub-collections/[id]/photos` — Remove photos from sub-collection
 
-### `DELETE /api/photos/[id]` — Delete single photo (removes from storage + DB)
+Accepts `{ photo_ids: string[] }`. Deletes rows from `sub_collection_photos`.
 
-### `PATCH /api/sub-collections/[id]` — Rename sub-collection (web only in v1)
+### `POST /api/sub-collections/[id]/download` — Bulk download as ZIP
 
-- Accepts `{ name: string }`
-- Returns updated sub-collection
+Synchronous route — builds and streams the ZIP in a single request/response cycle.
+For large sub-collections on slow connections this may be slow; async job-queue
+streaming is a future enhancement.
 
-### `DELETE /api/sub-collections/[id]` — Delete sub-collection (web only in v1)
+**Request body:**
 
-- Deletes the sub-collection and all `sub_collection_photos` rows for it
-- Does NOT delete the photos themselves — only removes the sub-collection grouping
+```json
+{
+  "naming": "original",
+  "prefix": "Wall_Art_",
+  "include_title": true,
+  "include_caption": true
+}
+```
+
+`naming` is `'original'` (keep DB filename) or `'prefix_sequence'`
+(e.g. `Wall_Art_001.jpg`). `prefix` is only used when `naming = 'prefix_sequence'`.
+
+**Behavior:**
+
+- When `include_title` or `include_caption` is true, all output files are
+  normalized to JPEG (non-JPEG originals are re-encoded via `sharp`) and IPTC +
+  XMP metadata is injected. Any pre-existing IPTC/XMP blocks (e.g. from Lightroom)
+  are stripped first so our values are authoritative.
+- When `is_bw = true` on the sub-collection, a grayscale recombination matrix is
+  applied via `sharp` using each photo's `bw_profile`.
+- Output filenames are normalized to `.jpg` when the file is JPEG output (metadata
+  requested or B&W conversion active), eliminating `.jpeg` / `.jpg` mixed output.
+- Duplicate filenames within the ZIP are de-duplicated with a `_N` suffix.
+
+**Response:** `application/zip` with
+`Content-Disposition: attachment; filename="{sub-collection name}.zip"`.
+
+### `GET /api/share/[token]/download` — Public ZIP download (no auth required)
+
+Available only when `share_allow_downloads = true`. Returns a ZIP of the original
+files (no metadata injection, no B&W conversion).
+
+> **Not yet implemented:** `GET /api/share/[token]` — a JSON endpoint to fetch
+> public sub-collection metadata and photo list for programmatic clients (e.g. the
+> iOS share viewer). Currently the public share view is rendered server-side at
+> `/s/[token]` only.
 
 ---
 
