@@ -8,20 +8,22 @@ interface RouteContext {
   params: { id: string }
 }
 
-async function analyzePhotoInternal(photoId: string, cookies: string): Promise<void> {
+async function analyzePhotoInternal(
+  photoId: string,
+  auth: { cookie: string; authorization: string }
+): Promise<void> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const url = `${baseUrl}/api/photos/${photoId}`
 
   console.log(`[Queue] → Triggering analysis for photo ${photoId}`)
 
+  // Forward whichever auth scheme the caller used: cookie (web) or Bearer (iOS).
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (auth.cookie) headers['Cookie'] = auth.cookie
+  if (auth.authorization) headers['Authorization'] = auth.authorization
+
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cookie': cookies,
-      },
-    })
+    const res = await fetch(url, { method: 'POST', headers })
 
     if (!res.ok) {
       const text = await res.text()
@@ -57,9 +59,13 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Get cookies from the request to pass to internal calls
-  const cookies = req.headers.get('cookie') || ''
-  console.log(`[Queue] Cookies available: ${!!cookies}`)
+  // Capture caller auth so background sub-requests carry the same identity.
+  // Web sends a session cookie; iOS sends a Bearer JWT in Authorization.
+  const auth = {
+    cookie: req.headers.get('cookie') || '',
+    authorization: req.headers.get('authorization') || '',
+  }
+  console.log(`[Queue] Auth: cookie=${!!auth.cookie} bearer=${!!auth.authorization}`)
 
   // Get all unanalyzed photos in collection
   console.log(`[Queue] Fetching unanalyzed photos for collection ${collectionId}`)
@@ -87,7 +93,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   // This allows the response to return immediately while photos analyze
   ;(async () => {
     for (const photo of photos) {
-      await analyzePhotoInternal(photo.id, cookies)
+      await analyzePhotoInternal(photo.id, auth)
     }
     console.log(`[Queue] ✅ All analysis requests completed`)
   })().catch(err => {
