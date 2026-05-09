@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { Photo, SubCollection, SubCollectionPhoto } from '@/lib/types'
+import { createClient } from '@/lib/supabase/client'
 import { CollectionToolbar } from '@/components/collections/CollectionToolbar'
 import { NewSubCollectionModal } from '@/components/collections/NewSubCollectionModal'
 import { ShareSettingsModal } from '@/components/collections/ShareSettingsModal'
@@ -96,6 +97,7 @@ export function CollectionView({
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
   const [analyzeAllRunning, setAnalyzeAllRunning] = useState(false)
   const [analyzeNotice, setAnalyzeNotice] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const batchSizeRef = useRef(0)
 
   useEffect(() => setPhotos(initialPhotos), [initialPhotos])
   useEffect(() => setSubCollections(initialSubCollections), [initialSubCollections])
@@ -103,6 +105,44 @@ export function CollectionView({
     () => setSubCollectionPhotos(initialSubCollectionPhotos),
     [initialSubCollectionPhotos]
   )
+
+  // Supabase Realtime: receive photo updates as Inngest completes each analysis job
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`collection-photos-${collectionId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'photos', filter: `collection_id=eq.${collectionId}` },
+        (payload) => {
+          const updated = payload.new as Photo
+          setPhotos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+          // Remove from analyzing set when the job completes
+          if (updated.ai_analyzed_at) {
+            setAnalyzingIds((prev) => {
+              const next = new Set(prev)
+              next.delete(updated.id)
+              return next
+            })
+          }
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [collectionId])
+
+  // Detect batch completion: analyzingIds drains to zero while a batch is running
+  useEffect(() => {
+    if (analyzeAllRunning && analyzingIds.size === 0 && batchSizeRef.current > 0) {
+      const n = batchSizeRef.current
+      batchSizeRef.current = 0
+      setAnalyzeAllRunning(false)
+      setAnalyzeNotice({
+        message: `Analysis complete — ${n} photo${n !== 1 ? 's' : ''} analyzed.`,
+        type: 'success',
+      })
+    }
+  }, [analyzingIds.size, analyzeAllRunning])
 
   // Filter / sort state
   const [tierFilter, setTierFilter] = useState<TierFilter>('all')
@@ -251,27 +291,20 @@ export function CollectionView({
 
     setAnalyzeAllRunning(true)
     setAnalyzeNotice(null)
-    let billingError = false
-    for (let i = 0; i < unanalyzed.length; i += 3) {
-      const results = await Promise.all(unanalyzed.slice(i, i + 3).map((p) => analyzePhoto(p.id)))
-      if (results.includes('billing')) {
-        setAnalyzeNotice({
-          message: 'Analysis stopped — add credits at console.anthropic.com to continue.',
-          type: 'error',
-        })
-        billingError = true
-        break
-      }
+    // Show spinners on all unanalyzed cards immediately; Realtime clears them as jobs complete
+    batchSizeRef.current = unanalyzed.length
+    setAnalyzingIds(new Set(unanalyzed.map((p) => p.id)))
+
+    const res = await fetch(`/api/collections/${collectionId}/analyze-all`, { method: 'POST' })
+    if (!res.ok) {
+      batchSizeRef.current = 0
+      setAnalyzeAllRunning(false)
+      setAnalyzingIds(new Set())
+      setAnalyzeNotice({ message: 'Failed to queue analysis.', type: 'error' })
     }
-    if (!billingError) {
-      const n = unanalyzed.length
-      setAnalyzeNotice({
-        message: `Analysis complete — ${n} photo${n !== 1 ? 's' : ''} analyzed.`,
-        type: 'success',
-      })
-    }
-    setAnalyzeAllRunning(false)
-  }, [photos, analyzingIds, analyzeAllRunning, analyzePhoto])
+    // On success: stay in running state. Realtime updates drive per-photo completion;
+    // the completion useEffect fires when analyzingIds drains to zero.
+  }, [photos, analyzingIds, analyzeAllRunning, collectionId])
 
   const handlePhotoDelete = useCallback(
     async (photoId: string) => {
