@@ -7,6 +7,7 @@ import { analyzePhoto, CollectionType } from '@/lib/anthropic/analyze'
 import { BW_PROFILES, DEFAULT_BW_PROFILE } from '@/lib/bw-profiles'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60 // Claude API + image download/resize can take up to ~30s
 
 interface RouteContext {
   params: { id: string }

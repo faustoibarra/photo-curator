@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// Mark as dynamic since we can't pregenerate all possible collection IDs
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300 // Allow up to 5 min for parallel batch analysis
 
 interface RouteContext {
   params: { id: string }
@@ -11,7 +11,7 @@ interface RouteContext {
 async function analyzePhotoInternal(
   photoId: string,
   auth: { cookie: string; authorization: string }
-): Promise<void> {
+): Promise<{ photoId: string; success: boolean; error?: string }> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const url = `${baseUrl}/api/photos/${photoId}`
 
@@ -35,16 +35,16 @@ async function analyzePhotoInternal(
         // keep text as is
       }
       console.error(`[Queue] ✗ Failed for ${photoId}: ${res.status} - ${errorMsg}`)
-    } else {
-      console.log(`[Queue] ✓ Triggered for ${photoId}`)
+      return { photoId, success: false, error: errorMsg }
     }
+
+    console.log(`[Queue] ✓ Completed for ${photoId}`)
+    return { photoId, success: true }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[Queue] ✗ Request failed for ${photoId}: ${message}`)
+    return { photoId, success: false, error: message }
   }
-
-  // Add a small delay between sequential requests to avoid overwhelming the API
-  await new Promise(resolve => setTimeout(resolve, 100))
 }
 
 export async function POST(req: NextRequest, { params }: RouteContext) {
@@ -87,21 +87,21 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     return Response.json({ message: 'No unanalyzed photos', count: 0 })
   }
 
-  console.log(`[Queue] Found ${photos.length} unanalyzed photos, starting sequential analysis`)
+  console.log(`[Queue] Found ${photos.length} unanalyzed photos, starting parallel analysis`)
 
-  // Start analysis in background (don't wait)
-  // This allows the response to return immediately while photos analyze
-  ;(async () => {
-    for (const photo of photos) {
-      await analyzePhotoInternal(photo.id, auth)
-    }
-    console.log(`[Queue] ✅ All analysis requests completed`)
-  })().catch(err => {
-    console.error(`[Queue] Background processing error:`, err)
-  })
+  const results = await Promise.allSettled(
+    photos.map(photo => analyzePhotoInternal(photo.id, auth))
+  )
+
+  const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.success).length
+  const failed = results.length - succeeded
+
+  console.log(`[Queue] ✅ Batch complete: ${succeeded} succeeded, ${failed} failed`)
 
   return Response.json({
-    message: 'Analysis queue started',
+    message: 'Analysis complete',
     count: photos.length,
+    succeeded,
+    failed,
   })
 }
