@@ -93,11 +93,42 @@ export function CollectionView({
     initialSubCollectionPhotos
   )
 
-  // Analysis queue state
-  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set())
-  const [analyzeAllRunning, setAnalyzeAllRunning] = useState(false)
+  // Analysis queue state — persisted to sessionStorage to survive navigation
+  const sessionKey = `analyzing-${collectionId}`
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
+    try {
+      const stored = sessionStorage.getItem(`analyzing-${collectionId}`)
+      if (!stored) return new Set()
+      const { ids } = JSON.parse(stored) as { ids: string[]; batchSize: number }
+      const unanalyzed = new Set(initialPhotos.filter((p) => !p.ai_analyzed_at).map((p) => p.id))
+      return new Set(ids.filter((id) => unanalyzed.has(id)))
+    } catch { return new Set() }
+  })
+  const [analyzeAllRunning, setAnalyzeAllRunning] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      const stored = sessionStorage.getItem(`analyzing-${collectionId}`)
+      if (!stored) return false
+      const { ids } = JSON.parse(stored) as { ids: string[]; batchSize: number }
+      const unanalyzed = new Set(initialPhotos.filter((p) => !p.ai_analyzed_at).map((p) => p.id))
+      return ids.some((id) => unanalyzed.has(id))
+    } catch { return false }
+  })
   const [analyzeNotice, setAnalyzeNotice] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const batchSizeRef = useRef(0)
+
+  // Restore batchSizeRef from sessionStorage after mount
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(sessionKey)
+      if (!stored) return
+      const { ids, batchSize } = JSON.parse(stored) as { ids: string[]; batchSize: number }
+      const unanalyzed = new Set(initialPhotos.filter((p) => !p.ai_analyzed_at).map((p) => p.id))
+      if (ids.some((id) => unanalyzed.has(id))) batchSizeRef.current = batchSize
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => setPhotos(initialPhotos), [initialPhotos])
   useEffect(() => setSubCollections(initialSubCollections), [initialSubCollections])
@@ -117,8 +148,16 @@ export function CollectionView({
         (payload) => {
           const updated = payload.new as Photo
           setPhotos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
-          // Remove from analyzing set when the job completes
           if (updated.ai_analyzed_at) {
+            try {
+              const stored = sessionStorage.getItem(sessionKey)
+              if (stored) {
+                const data = JSON.parse(stored) as { ids: string[]; batchSize: number }
+                const newIds = data.ids.filter((id) => id !== updated.id)
+                if (newIds.length > 0) sessionStorage.setItem(sessionKey, JSON.stringify({ ...data, ids: newIds }))
+                else sessionStorage.removeItem(sessionKey)
+              }
+            } catch { /* ignore */ }
             setAnalyzingIds((prev) => {
               const next = new Set(prev)
               next.delete(updated.id)
@@ -129,20 +168,21 @@ export function CollectionView({
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [collectionId])
+  }, [collectionId, sessionKey])
 
   // Detect batch completion: analyzingIds drains to zero while a batch is running
   useEffect(() => {
     if (analyzeAllRunning && analyzingIds.size === 0 && batchSizeRef.current > 0) {
       const n = batchSizeRef.current
       batchSizeRef.current = 0
+      try { sessionStorage.removeItem(sessionKey) } catch { /* ignore */ }
       setAnalyzeAllRunning(false)
       setAnalyzeNotice({
         message: `Analysis complete — ${n} photo${n !== 1 ? 's' : ''} analyzed.`,
         type: 'success',
       })
     }
-  }, [analyzingIds.size, analyzeAllRunning])
+  }, [analyzingIds.size, analyzeAllRunning, sessionKey])
 
   // Filter / sort state
   const [tierFilter, setTierFilter] = useState<TierFilter>('all')
@@ -293,18 +333,26 @@ export function CollectionView({
     setAnalyzeNotice(null)
     // Show spinners on all unanalyzed cards immediately; Realtime clears them as jobs complete
     batchSizeRef.current = unanalyzed.length
-    setAnalyzingIds(new Set(unanalyzed.map((p) => p.id)))
+    const analyzingIdSet = new Set(unanalyzed.map((p) => p.id))
+    try {
+      sessionStorage.setItem(sessionKey, JSON.stringify({
+        ids: [...analyzingIdSet],
+        batchSize: unanalyzed.length,
+      }))
+    } catch { /* ignore */ }
+    setAnalyzingIds(analyzingIdSet)
 
     const res = await fetch(`/api/collections/${collectionId}/analyze-all`, { method: 'POST' })
     if (!res.ok) {
       batchSizeRef.current = 0
+      try { sessionStorage.removeItem(sessionKey) } catch { /* ignore */ }
       setAnalyzeAllRunning(false)
       setAnalyzingIds(new Set())
       setAnalyzeNotice({ message: 'Failed to queue analysis.', type: 'error' })
     }
     // On success: stay in running state. Realtime updates drive per-photo completion;
     // the completion useEffect fires when analyzingIds drains to zero.
-  }, [photos, analyzingIds, analyzeAllRunning, collectionId])
+  }, [photos, analyzingIds, analyzeAllRunning, collectionId, sessionKey])
 
   const handlePhotoDelete = useCallback(
     async (photoId: string) => {
