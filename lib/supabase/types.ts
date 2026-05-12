@@ -84,10 +84,13 @@ export type Database = {
           ai_composition_rating: number | null
           ai_critique: string | null
           ai_crop_suggestion: string | null
+          ai_curator_score: number | null
           ai_impact_rating: number | null
           ai_light_rating: number | null
           ai_overall_rating: number | null
           ai_print_rating: number | null
+          ai_social_score: number | null
+          ai_stranger_score: number | null
           ai_tags: string[] | null
           ai_technical_rating: number | null
           ai_tier: string | null
@@ -117,10 +120,13 @@ export type Database = {
           ai_composition_rating?: number | null
           ai_critique?: string | null
           ai_crop_suggestion?: string | null
+          ai_curator_score?: number | null
           ai_impact_rating?: number | null
           ai_light_rating?: number | null
           ai_overall_rating?: number | null
           ai_print_rating?: number | null
+          ai_social_score?: number | null
+          ai_stranger_score?: number | null
           ai_tags?: string[] | null
           ai_technical_rating?: number | null
           ai_tier?: string | null
@@ -150,10 +156,13 @@ export type Database = {
           ai_composition_rating?: number | null
           ai_critique?: string | null
           ai_crop_suggestion?: string | null
+          ai_curator_score?: number | null
           ai_impact_rating?: number | null
           ai_light_rating?: number | null
           ai_overall_rating?: number | null
           ai_print_rating?: number | null
+          ai_social_score?: number | null
+          ai_stranger_score?: number | null
           ai_tags?: string[] | null
           ai_technical_rating?: number | null
           ai_tier?: string | null
