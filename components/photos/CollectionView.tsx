@@ -336,7 +336,7 @@ export function CollectionView({
     const analyzingIdSet = new Set(unanalyzed.map((p) => p.id))
     try {
       sessionStorage.setItem(sessionKey, JSON.stringify({
-        ids: [...analyzingIdSet],
+        ids: Array.from(analyzingIdSet),
         batchSize: unanalyzed.length,
       }))
     } catch { /* ignore */ }
