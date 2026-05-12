@@ -466,6 +466,24 @@ export function SinglePhotoView({
                   </div>
                 )}
 
+                {/* Three judge scores */}
+                {(photo.ai_curator_score != null || photo.ai_stranger_score != null || photo.ai_social_score != null) && (
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    {[
+                      { label: 'Gallery', value: photo.ai_curator_score, title: 'Gallery Curator — would this hang on a wall?' },
+                      { label: 'Stranger', value: photo.ai_stranger_score, title: 'Stranger Scrolling — would someone stop and react?' },
+                      { label: 'Social', value: photo.ai_social_score, title: 'Social Editor — would this earn likes on IG/FB?' },
+                    ].map(({ label, value, title }) => (
+                      <div key={label} className="rounded-md bg-muted/50 px-2 py-1.5" title={title}>
+                        <div className="text-base font-bold font-display tabular-nums">
+                          {value != null && !isNaN(Number(value)) ? Number(value).toFixed(0) : '—'}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground leading-tight">{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Rating breakdown */}
                 <div className="space-y-1.5">
                   <RatingBar label="Technical" value={photo.ai_technical_rating} />
