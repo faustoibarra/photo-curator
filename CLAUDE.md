@@ -42,7 +42,7 @@ PhotoCurator is a **Next.js 14 app** where photographers upload and organize pho
 ### Data model (key tables)
 
 - **`collections`** — user's photo albums (type: `trip | event | project`)
-- **`photos`** — photo metadata + AI analysis results (`ai_tier` A/B/C, ratings 1–10, critique, tags, crop suggestions)
+- **`photos`** — photo metadata + AI analysis results (`ai_tier` A/B/C, ratings 1–10, critique, tags, crop suggestions, `ai_curator_score` / `ai_stranger_score` / `ai_social_score` 1–10 from the Three Judges framework)
 - **`sub_collections`** — curated subsets within a collection; support sharing via `share_token`
 - **`sub_collection_photos`** — junction table with per-photo scores
 

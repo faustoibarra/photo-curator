@@ -95,6 +95,9 @@ export async function POST(_req: NextRequest, { params }: RouteContext) {
       .update({
         ai_title: analysis.title,
         ai_caption: analysis.caption,
+        ai_curator_score: analysis.curator_score,
+        ai_stranger_score: analysis.stranger_score,
+        ai_social_score: analysis.social_score,
         ai_overall_rating: analysis.overall_rating,
         ai_technical_rating: analysis.technical_rating,
         ai_composition_rating: analysis.composition_rating,

@@ -4,7 +4,7 @@ AI-powered photo curation for photographers. Upload shoots, get Claude critiques
 
 ## Features
 
-- **AI critique** — Claude analyzes each photo for technical quality, composition, light, and impact. Assigns a tier (A+/A/B/C) and detailed written critique.
+- **AI critique** — Claude evaluates each photo through a "Three Judges" framework: a Gallery Curator (composition, light, timelessness), a Stranger Scrolling (stopping power, emotion), and a Social Editor (thumbnail punch, shareability). Each judge scores 1–10; the overall rating is their equal-weighted average. Analysis also produces a tier (A+/A/B/C) and a detailed written critique that references all three lenses.
 - **Collections** — organize shoots by type (nature trip, city trip, sports, social event). Context-aware AI prompting per collection type.
 - **Sub-collections** — build curated sets within a collection. Generate a "Best Of" automatically using weighted AI + user ratings.
 - **Sharing** — share sub-collections via a public link with optional download access.

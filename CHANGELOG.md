@@ -2,6 +2,22 @@
 
 All notable changes to PhotoCurator are documented here.
 
+## [0.1.1.0] - 2026-05-12
+
+### Added
+- **Three Judges analysis framework** — AI photo analysis now evaluates images through three distinct lenses: Gallery Curator (wall-print quality), Stranger Scrolling (stopping power for people who don't know you), and Social Editor (IG/FB organic engagement). Each lens gets its own 1–10 score, visible in the photo detail panel.
+- **Judge sub-scores in photo view** — Gallery, Stranger, and Social scores now appear as a score grid in the analysis panel with tooltip descriptions of each judge's criteria.
+
+### Changed
+- **Overall rating is now the equal-weighted average of the three judge scores**, computed server-side from validated values — Claude can no longer return an inconsistent overall score.
+- **Tier definitions tightened to universal appeal**: A+ requires strong scores across all three judges; B is explicitly "nice memory" territory (low on stranger and social); C is reject regardless of sentimental value.
+- **Critiques now reference all three judges** — the prompt instructs Claude to describe how each judge would respond, giving photographers actionable insight into why a photo is gallery-worthy, scroll-stopping, or social-friendly.
+
+### Fixed
+- Judge scores written by the direct analysis route (`POST /api/photos/[id]`) — they were previously saved only via the Inngest job path, leaving the columns null for all browser-triggered analyses.
+- Score fields validated and clamped to [1, 10] after Claude responds; NaN values (from missing or invalid JSON fields) now throw before reaching the database.
+- Score rendering in the UI now guards against NaN values, showing `—` instead of `NaN` for any corrupted score.
+
 ## [0.1.0.0] - 2026-04-21
 
 ### Added
